@@ -1,4 +1,4 @@
-import {useState,useMemo} from 'react'
+import {useMemo} from 'react'
 import {dummyPostsData} from '../assets/assets'
 import StoriesBar from '../Components/feeds/StoriesBar'
 import PostCard from '../Components/feeds/PostCard'
