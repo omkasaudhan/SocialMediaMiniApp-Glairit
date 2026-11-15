@@ -5,7 +5,7 @@ import { serve } from 'inngest/express'
 import connectDB from './Config/db.js'
 import { inngest, functions } from './inngest/index.js'
 import User from './models/User.js'
-import { clerkMiddleware } from '@clerk/express'                                            
+import { clerkMiddleware, getAuth } from '@clerk/express'                                            
 import userRouter from './routes/userRoutes.js'
 import postRouter from './routes/postRoutes.js'
 import storyRouter from './routes/storyRoutes.js'
@@ -33,6 +33,24 @@ if (process.env.CLERK_PUBLISHABLE_KEY || process.env.CLERK_SECRET_KEY) {
 } else {
     console.warn('Warning: CLERK_PUBLISHABLE_KEY or CLERK_SECRET_KEY is missing in environment variables');
 }
+
+// Normalize Clerk authentication onto req.auth and req.userId
+app.use((req, res, next) => {
+    try {
+        const authData = getAuth(req);
+        if (authData) {
+            req.userId = authData.userId;
+            if (req.auth && typeof req.auth === 'function') {
+                Object.assign(req.auth, authData);
+            } else if (!req.auth) {
+                req.auth = authData;
+            }
+        }
+    } catch (err) {
+        // Ignored if unauthenticated
+    }
+    next();
+});
 
 app.get('/', (req, res) => res.send('Server is running'));
 app.use('/api/inngest', serve({ client: inngest, functions }));
