@@ -1,8 +1,14 @@
 import { Inngest } from "inngest";
 import User from "../models/User.js";
 import Message from "../models/Message.js";
+import Connection from "../models/Connection.js";
+import Story from "../models/Story.js";
+import sendEmail from "../Config/nodeMailer.js";
                   
-export const inngest = new Inngest({ id: "Glairit-Socially-app" });
+export const inngest = new Inngest({ 
+    id: "Glairit-Socially-app",
+    isDev: process.env.NODE_ENV !== "production"
+});
 
 const syncUserCreation = inngest.createFunction(
     {
@@ -23,7 +29,7 @@ const syncUserCreation = inngest.createFunction(
     
         while(!isUnique && attempts < 5){    
             const existingUser = await User.findOne({username})
-            if(existingUser){
+            if(existingUser && existingUser._id !== id){
                 username = `${username}${Math.floor(1000 + Math.random() * 9000)}`
                 attempts++;
             } else {
@@ -33,11 +39,12 @@ const syncUserCreation = inngest.createFunction(
         const userData ={
             _id: id,
             email: primaryEmail,
-            full_name: `${first_name || " "} ${last_name || ''}`.trim(),
-            profile_picture: image_url,
+            full_name: `${first_name || ""} ${last_name || ''}`.trim(),
+            profile_picture: image_url || '',
             username
         }
         await User.findByIdAndUpdate(id, userData, {upsert: true, new: true})
+        return { message: "User synced successfully", userId: id }
     }
 )
 
@@ -49,17 +56,18 @@ const syncUserUpdation = inngest.createFunction(
     async ({event})=>{
         const { id, first_name, last_name, email_addresses, image_url } = event.data
         
-        const updatedUserData = {
-                email: email_addresses[0].email_address,
-                full_name: `${first_name || " "} ${last_name || ''}`.trim(),
-                profile_picture: image_url
-        }
+        const primaryEmail = email_addresses && email_addresses.length > 0 
+            ? email_addresses[0].email_address 
+            : undefined;
 
-        if(email_addresses && email_addresses.length > 0){
-            updatedUserData.email = email_addresses[0].email_address
+        const updatedUserData = {
+            ...(primaryEmail ? { email: primaryEmail } : {}),
+            full_name: `${first_name || ""} ${last_name || ''}`.trim(),
+            profile_picture: image_url || ''
         }
         
-        await User.findByIdAndUpdate(id, updatedUserData)
+        await User.findByIdAndUpdate(id, updatedUserData, { new: true })
+        return { message: "User updated successfully", userId: id }
     }
 )
 
@@ -71,19 +79,25 @@ const syncUserDeletion = inngest.createFunction(
     async ({event})=>{
         const {id} = event.data
         await User.findByIdAndDelete(id)
+        return { message: "User deleted successfully", userId: id }
     }
 )
 
-// Inngest functions for user creation, updation, and deletion are defined above. These functions to send reminder when  new connection request is added.
- const sendNewConnectionRequestReminder = inngest.createFunction(
+// Inngest functions for user creation, updation, and deletion are defined above. These functions to send reminder when new connection request is added.
+const sendNewConnectionRequestReminder = inngest.createFunction(
     {
         id: 'send-new-connection-request-reminder',
         event: 'app/connection-request'
     },
-    async ({event}) => {
+    async ({event, step}) => {
         const {connectionId} = event.data
         await step.run('send-connection-request-mail', async () =>{
-            const connection = await Connection.findById(connectionId).populate('from_user_id', 'full_name email').populate('from_user_id','to_user_id')
+            const connection = await Connection.findById(connectionId)
+                .populate('from_user_id', 'full_name username email')
+                .populate('to_user_id', 'full_name email')
+            if (!connection || !connection.to_user_id || !connection.from_user_id) {
+                return { message: "Connection or user not found" }
+            }
             const subject = 'New Connection Request'
             const body = 
             `<div style="font-family: Arial, sans-serif; padding: 20px;">
@@ -93,16 +107,18 @@ const syncUserDeletion = inngest.createFunction(
                 <br />
                 <p>Thanks,<br/>Glairit-Socially</p>
             </div>`
-            await sendEmail({to: connection.to_user_id.email, subject, body})
+            await sendEmail(connection.to_user_id.email, subject, body)
         })
         const in24Hours = new Date(Date.now() + 24 * 60 * 60 * 1000); 
         await step.sleepUntil("wait-for-24-hours", in24Hours)
         await step.run('send-connection-request-reminder', async () => {
-            const connection = await Connection.findById(connectionId).populate('from_user_id', 'full_name email').populate('from_user_id','to_user_id')    
-            if(connection.status === 'accepted'){
-                return {message: "Already accepted, no need to send reminder"}
+            const connection = await Connection.findById(connectionId)
+                .populate('from_user_id', 'full_name username email')
+                .populate('to_user_id', 'full_name email')    
+            if(!connection || connection.status === 'accepted'){
+                return {message: "Already accepted or connection not found, no need to send reminder"}
             }
-          const subject = 'New Connection Request'
+            const subject = 'New Connection Request Reminder'
             const body = 
             `<div style="font-family: Arial, sans-serif; padding: 20px;">
                 <h2>HI ${connection.to_user_id.full_name},</h2>
@@ -111,11 +127,12 @@ const syncUserDeletion = inngest.createFunction(
                 <br />
                 <p>Thanks,<br/>Glairit-Socially</p>
             </div>`
-            await sendEmail({to: connection.to_user_id.email, subject, body})
+            await sendEmail(connection.to_user_id.email, subject, body)
         }) 
-            return {message: "Reminder sent successfully"}
-        }   
+        return {message: "Reminder sent successfully"}
+    }   
 )
+
 const deleteStory = inngest.createFunction(
     {
         id: 'story-delete',
@@ -126,8 +143,8 @@ const deleteStory = inngest.createFunction(
         const in24Hours = new Date(Date.now() + 24 * 60 * 60 * 1000);
         await step.sleepUntil("wait-for-24-hours", in24Hours)
         await step.run('delete-story', async () => {
-                    await Story.findByIdAndDelete(storyId)
-                    return {message: "Story deleted successfully"}
+            await Story.findByIdAndDelete(storyId)
+            return {message: "Story deleted successfully"}
         })
     }
 )
@@ -141,12 +158,15 @@ const sendNotificationOfUnseenMessages = inngest.createFunction(
         const messages = await Message.find({seen: false}).populate('to_user_id')
         const unseenCount = {}
 
-        messages.map(message => {
-            unseenCount[message.to_user_id._id] = (unseenCount[message.to_user_id._id] || 0) + 1
+        messages.forEach(message => {
+            if (message.to_user_id && message.to_user_id._id) {
+                unseenCount[message.to_user_id._id] = (unseenCount[message.to_user_id._id] || 0) + 1
+            }
         })
 
         for (const userId in unseenCount) {
             const user = await User.findById(userId)
+            if (!user) continue;
             const subject = 'You have unseen messages'
             const body =
             `<div style="font-family: Arial, sans-serif; padding: 20px;">
@@ -156,12 +176,12 @@ const sendNotificationOfUnseenMessages = inngest.createFunction(
                 <br />
                 <p>Thanks,<br/>Glairit-Socially</p>
             </div>`
-            await sendEmail({to: user.email, subject, body})
+            await sendEmail(user.email, subject, body)
         }
     }
 )
 
-//Create an empty array where we will export Inngest functions
+//Create an array where we export Inngest functions
 export const functions = [
     syncUserCreation, 
     syncUserUpdation,

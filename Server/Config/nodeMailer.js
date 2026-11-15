@@ -11,11 +11,27 @@ const transporter = nodemailer.createTransport({
 });
 
 const sendEmail = async (to, subject, body) => {
+    let recipient = to;
+    let mailSubject = subject;
+    let mailHtml = body;
+
+    // Support both sendEmail(to, subject, body) and sendEmail({ to, subject, body })
+    if (typeof to === 'object' && to !== null) {
+        recipient = to.to;
+        mailSubject = to.subject;
+        mailHtml = to.body || to.html;
+    }
+
+    if (!recipient) {
+        console.warn('sendEmail skipped: recipient is missing');
+        return null;
+    }
+
     const response = await transporter.sendMail({
         from: process.env.SENDER_EMAIL,
-        to, 
-        subject,
-        html: body,
+        to: recipient, 
+        subject: mailSubject,
+        html: mailHtml,
     });
     return response;
 }

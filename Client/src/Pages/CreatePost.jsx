@@ -2,22 +2,25 @@ import React, { useState, useEffect } from 'react'
 import { Image, X, Loader2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { dummyUserData } from '../assets/assets'
+import { useSelector } from 'react-redux'
+import { useAuth } from '@clerk/react'
+import api from '../api/axios'
 
 const MAX_IMAGES = 4
 
 const CreatePost = () => {
-  const navigate = useNavigate()
-  const user = dummyUserData
 
+  const navigate = useNavigate()
+  const user = useSelector((state)=>state.user.value)
+  // const user = dummyUserData
   const [content, setContent] = useState('')
   const [images, setImages] = useState([]) // [{ file, preview }]
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState(null) // { type: 'error' | 'success', text }
-
+  const { getToken } = useAuth
   // Free object URLs when the component unmounts
   useEffect(() => {
     return () => images.forEach((img) => URL.revokeObjectURL(img.preview))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleImageChange = (e) => {
@@ -46,7 +49,7 @@ const CreatePost = () => {
   }
 
   const handlePublish = async () => {
-    if (!content.trim() && images.length === 0) {
+    if (!content.trim() && !images.length) {
       setStatus({ type: 'error', text: 'Add some text or an image before publishing.' })
       return
     }
@@ -68,8 +71,16 @@ const CreatePost = () => {
       formData.append('post_type', post_type)
       images.forEach((img) => formData.append('images', img.file))
 
-      // TODO: replace with your real API call, e.g.
-      // await api.post('/api/post/add', formData)
+      const { data } = await api.post('/api/post/add', formData, {headers: {
+        Authorization: `Bearer ${await getToken()}`
+      }})
+
+      if( data.success ){
+        setTimeout(() => navigate('/'), 800)
+      } else {
+        console.log(data.message)
+        throw new Error(data.message)
+      }
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
       setStatus({ type: 'success', text: 'Post published.' })

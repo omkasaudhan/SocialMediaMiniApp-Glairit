@@ -1,6 +1,8 @@
 import {useState } from 'react'
 import {X, Image as ImageIcon, Type,} from 'lucide-react'
 import {dummyUserData} from '../../assets/assets'
+import { useAuth } from '@clerk/react'
+import api from '../../api/axios'
 
 const STORY_COLORS = ['#4f46e5', '#7c3aed', '#db2777', '#e11d48', '#ea580c', '#059669', '#0891b2', '#1e293b']
 
@@ -9,18 +11,74 @@ const StoryModel = ({ onClose, onCreate }) => {
   const [text, setText] = useState('')
   const [color, setColor] = useState(STORY_COLORS[0])
   const [media, setMedia] = useState(null) // { url, type }
+  const {getTaken} = useAuth
 
+  const MAX_VIDEO_DURATION = 60;
+  const MAX_VIDEO_SIZE_MB = 50;
+  
   const handleMedia = (e) => {
     const file = e.target.files?.[0]
-    if (!file) return
-    if (media) URL.revokeObjectURL(media.url)
-    setMedia({ url: URL.createObjectURL(file), type: file.type.startsWith('video') ? 'video' : 'image' })
-    e.target.value = ''
+    if(file){
+      if(file.type.startWith("video")){
+        if(file.size > MAX_VIDEO_SIZE_MB * 1024 * 1024){
+          toast.error(`Video file size cannot exceed ${MAX_VIDEO_SIZE_MB}`)
+          setMedia(null)
+          return;
+        }
+        const video = document.createElement('video');
+        video.preload = 'metadata'
+        video.onloadedmetadata = ()=>{
+            window.URL.revokeObjectURL(video.src)
+            if(video.duration > MAX_VIDEO_DURATION){
+                toast.error("Video duration cannot exceed 1 minute.")
+                setMedia(null)
+            }else{
+                setMedia(file)
+                setPreviewUrl(URL.createObjectURL(file))
+                setText('')
+                setMode("media")
+            }
+         }
+        video.src = URL.createObjectURL(file)
+      }else if(file.type.startsWith("image")){
+          setMedia(file)
+          setPreviewUrl(URL.createObjectURL(file))
+          setText('')
+          setMode("media")
+      }
+    }
+    
   }
 
   const canCreate = mode === 'text' ? text.trim() : media
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
+    const media_type = mode === 'media' ? media?.type.startsWith('image') ? 'image' : "video" : "text"
+    if(media_type === "text" && !text){
+      throw new Error("Please enter some text")
+    }
+
+    let formData = new FormData()
+    formData.append('content', text)
+    formData.append('media_type', media_type)
+    formData.append('media', media)
+    formData.append('background_color', background)
+    
+    const token = await getToken()
+    try {
+      const { data } = await api.post('/api/story/create', formData, {headers: {Authorization: `Bearer ${token}`}
+      })
+      if (data.success){
+        setShowModal(false)
+        toast.success("Story created Succesfully")
+        fetchStories()
+      }else{
+        toast.error(data.message)
+      }
+    } catch (error) {
+      
+    }
+    
     if (!canCreate) return
     const now = new Date().toISOString()
     onCreate({

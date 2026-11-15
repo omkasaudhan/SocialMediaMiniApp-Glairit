@@ -1,15 +1,25 @@
 import { useEffect, useState } from 'react'
 import { Pencil } from 'lucide-react'
+import { useDispatch, useSelector } from 'react-redux'
+import { updateUser } from '../features/user/userSlice.js'
+import { useAuth } from '@clerk/react'
 
 const inputClass =
   'w-full p-3 border border-gray-200 rounded-lg text-sm text-slate-800 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500'
 
 const EditProfile = ({ user, onClose, onSave }) => {
+
+  const dispatch = useDispatch();
+  const { getToken } = useAuth()
+
+  const currentUser = useSelector((state) => state.user.value)
   const [form, setForm] = useState({
     full_name: user.full_name || '',
     username: user.username || '',
     bio: user.bio || '',
     location: user.location || '',
+    profile_picture: null,
+    cover_photo: null,
   })
   // Newly picked images: { file, preview } or null
   const [profileImage, setProfileImage] = useState(null)
@@ -44,7 +54,7 @@ const EditProfile = ({ user, onClose, onSave }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileImage, coverImage])
 
-  const handleSubmit = async (e) => {
+  const handleSaveProfile = async (e) => {
     e.preventDefault()
 
     if (!form.full_name.trim()) return setError('Name is required.')
@@ -53,12 +63,21 @@ const EditProfile = ({ user, onClose, onSave }) => {
 
     setSaving(true)
     try {
-      // TODO: replace with your API call, e.g.
-      // const fd = new FormData()
-      // Object.entries(form).forEach(([k, v]) => fd.append(k, v))
-      // profileImage && fd.append('profile', profileImage.file)
-      // coverImage && fd.append('cover', coverImage.file)
-      // const { data } = await api.post('/api/user/update', fd)
+      
+      const userData = new FormData()
+      
+      userData.append('username', form.username.trim())
+      userData.append('bio', form.bio.trim())
+      userData.append('location', form.location.trim())
+      userData.append('full_name', form.full_name.trim())
+
+      if(profile_picture?.file) userData.append('profile', profileImage.file)
+      if(cover_photo?.file) userData.append('cover', coverImage.file)
+      
+      const token = await getToken()
+      dispatch(updateUser({userData, token}))
+      setShowEdit(false)
+      
       await new Promise((resolve) => setTimeout(resolve, 600))
 
       onSave({
@@ -72,10 +91,19 @@ const EditProfile = ({ user, onClose, onSave }) => {
       })
       onClose() // previews stay alive because the profile now uses them
     } catch {
-      setError('Could not save your changes. Try again.')
+      toast.error(error.message)
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    toast.promise(handleSaveProfile(), {
+      loading: 'Saving modifications...',
+      success: 'Profile updated successfully!',
+      error: (err) => err.message || 'Could not save modifications.'
+    })
   }
 
   return (

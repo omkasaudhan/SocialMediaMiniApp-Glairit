@@ -11,25 +11,25 @@ import { useUser, useAuth } from '@clerk/react'
 import Layout from './Pages/Layout' 
 import {Toaster} from 'react-hot-toast'
 import { useEffect } from 'react'
+import { fetchUser } from './features/user/userSlice'
+import { useDispatch } from 'react-redux'
 
 function App() {
   const { user } = useUser() 
   const { getToken } = useAuth()
 
-    useEffect(() => {
-    const fetchToken = async () => {
-      try {
-        if (user) {
-          const token = await getToken();
-          console.log("Clerk Token:", token);
-        }
-      } catch (error) {
-        console.error("Error fetching auth token:", error);
-      }
-    };
+  const dispatch = useDispatch()
 
-    fetchToken();
-  }, [user, getToken]) 
+    useEffect(() => {
+      const fetchData = async () => {  
+      if (user) {
+          const token = await getToken()
+          dispatch(fetchUser(token))
+        } 
+      }
+      fetchData()
+      }, [user, getToken, dispatch])
+
   return (
     <>
       <Toaster />

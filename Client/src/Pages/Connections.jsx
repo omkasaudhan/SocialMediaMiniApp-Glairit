@@ -1,11 +1,7 @@
 import React, { useState } from 'react'
 import { Clock, UserCheck, UserPlus, Users } from 'lucide-react'
-import {
-  dummyConnectionsData,
-  dummyFollowersData,
-  dummyFollowingData,
-  dummyPendingConnectionsData,
-} from '../assets/assets'
+import {dummyConnectionsData,dummyFollowersData,
+  dummyFollowingData,dummyPendingConnectionsData,} from '../assets/assets'
 import Follower from '../Components/Connections/Followers';
 import Following from '../Components/Connections/Following';
 import Pending from '../Components/Connections/Pending';

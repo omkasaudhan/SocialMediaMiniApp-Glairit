@@ -56,25 +56,3 @@ export const getStories = async (req, res) => {
     }
 }
 
-// like posts
-// export const likePost = async (req, res) => {
-//     try {
-//         const {userId} = req.auth
-//         const {postId} = req.body
-
-//         const post = await Post.findById(postId)
-//         if(post.likes_count.include(userId)){
-//             post.likes_count = post.likes_count.filter(user => user !== userId)
-//             await post.save()
-//             res.json({success: true, message: "Post unliked successfully"})        
-//         }
-//         else{
-//             post.likes_count.push(userId)
-//             await post.save()
-//             res.json({success: true, message: "Post liked successfully"})
-//         }
-//     } catch (error) {
-//         console.log(error)
-//         res.json({success: false, message: error.message})
-//     }
-// }

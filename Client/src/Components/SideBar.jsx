@@ -4,10 +4,12 @@ import {useNavigate ,Link} from 'react-router-dom'
 import MenuItem from './MenuItem'
 import { CirclePlus, LogOut } from 'lucide-react'
 import { UserButton, useClerk } from '@clerk/react'
+import { useSelector } from 'react-redux'
 
 const SideBar = ({setSideBarOpen}) => {
     const navigate = useNavigate()
-    const user = dummyUserData
+    const user = useSelector((state)=>state.user.value)
+    // const user = dummyUserData
     const {signOut} = useClerk()
   return (
     <div className="w-60 xl:w-72 bg-white border-grey-200  flex flex-col justify-between items-center max-sm:absolute top-0 bottom-0 z-20 ${sidebarOpen ? 'translate-x-0' : 'max-sm:-translate-x-full} transiton-all duration-300 ease-in-out">

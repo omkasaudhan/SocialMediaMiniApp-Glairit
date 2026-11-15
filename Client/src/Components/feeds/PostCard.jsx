@@ -3,7 +3,9 @@ import {BadgeCheck,Heart,MessageCircle,Send,Share2} from 'lucide-react'
 import {useNavigate} from 'react-router-dom'
 import {dummyUserData} from '../../assets/assets'
 import TimeAgo from './TimeAgo'
-
+import { useSelector } from 'react-redux'
+import { useAuth } from '@clerk/react'
+import api from '../../api/axios'
 const renderContent = (text) =>
   text.split(/(#\w+)/g).map((part, i) =>
     part.startsWith('#') ? (
@@ -17,8 +19,9 @@ const renderContent = (text) =>
 
 const PostCard = ({ post }) => {
   const navigate = useNavigate()
-  const currentUser = dummyUserData
-
+  const currentUser = useSelector((state)=>state.user.value)
+  // const currentUser = dummyUserData
+  const { getToken } = useAuth
   const [likes, setLikes] = useState(post.likes_count)
   const [comments, setComments] = useState([])
   const [showComments, setShowComments] = useState(false)
@@ -27,6 +30,25 @@ const PostCard = ({ post }) => {
   const [copied, setCopied] = useState(false)
 
   const liked = likes.includes(currentUser._id)
+
+  const handleLike = async () => {
+    try{
+      const { data } = await api.post(`/api/post/like`, {postId: post._id},{headers: {Authorization: `Bearer ${await getToken()}`}})
+
+      if(data.success){
+        toast.success(data.message)
+        setLikes(prev =>{
+          if(prev.includes(currentUser._id)){
+            return prev.filter(id=> id !== currentUser._id)
+          }else{
+                return [...prev, currentUser._id]
+          }
+        })
+      }
+    } catch (error) {
+      toast.success(error.message)
+    }
+  }
 
   const toggleLike = () => {
     setLikes((prev) =>

@@ -5,6 +5,8 @@ import { dummyConnectionsData, dummyPostsData, dummyUserData } from '../assets/a
 import EditProfile from '../Components/EditProfile'
 import TimeAgo from '../Components/feeds/TimeAgo'
 import PostCard from '../Components/feeds/PostCard'
+import { useSelector } from 'react-redux'
+import { getToken, useAuth } from '@clerk/react'
 
 
 /* ------------------------------------------------------------------ */
@@ -13,8 +15,10 @@ import PostCard from '../Components/feeds/PostCard'
 
 const Profile = () => {
   const navigate = useNavigate()
+  const { getToken } = useAuth
   const { profileId } = useParams() // /profile  or  /profile/:profileId
-  const currentUser = dummyUserData
+  const currentUser = useSelector((state)=>state.user.value)
+  // const currentUser = dummyUserData
   const TABS = ['posts', 'media', 'likes']
   const baseUser = profileId
     ? dummyConnectionsData.find((u) => u._id === profileId)
@@ -24,12 +28,34 @@ const Profile = () => {
   const [activeTab, setActiveTab] = useState('posts')
   const [showEdit, setShowEdit] = useState(false)
 
+
+  const fetchUser = async (profileId) => {
+    if(!profileId){
+      setUser(currentUser)
+      return
+    }
+    const token = await getToken()
+    try{
+      const { data } = await api.post(`/api/user/profiles`, {profileId}, {
+        headers: {Authorization: `Bearer ${token}`}  
+      })
+    if(data.success){
+      setUser(data.profile || baseUser)
+      setActiveTab('posts')
+    }
+    } catch (error) {
+      toast.error(data.message)
+  }
+  }
   // Re-sync when navigating between profiles
   useEffect(() => {
-    setUser(baseUser)
-    setActiveTab('posts')
+    if(profileId){
+        fetchUser(profileId)
+    } else {
+      fetchUser(currentUser._id)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileId])
+  }, [profileId, currentUser])
 
   const isOwnProfile = user && user._id === currentUser._id
 
