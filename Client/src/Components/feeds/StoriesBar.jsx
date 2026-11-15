@@ -1,16 +1,18 @@
-import {useState} from 'react'
-import {dummyStoriesData} from '../../assets/assets'
+import {useState, useEffect } from 'react'
+import { dummyStoriesData } from '../../assets/assets'
 import { Plus } from 'lucide-react'
 import StoryModel from './StoryModel'
 import StoryViewer from './StoryViewer'
 import TimeAgo from './TimeAgo'
 import { useAuth } from '@clerk/react'
-
+import api from '../../api/axios'
+import toast from 'react-hot-toast' 
+import sampleUser from '../../assets/sample_user.jpg'
 
 const hideScrollbar = '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
 const StoriesBar = () => {
   const { getToken } = useAuth()
-  const [stories, setStories] = useState(dummyStoriesData)
+  const [stories, setStories] = useState([])
   const [showCreate, setShowCreate] = useState(false)
   const [viewIndex, setViewIndex] = useState(null)
 
@@ -28,6 +30,10 @@ const StoriesBar = () => {
         toast.error(error.message)
       }
   }
+
+  useEffect(()=>{
+    fetchStories()
+  },[])
 
   return (
     <>
@@ -62,7 +68,7 @@ const StoriesBar = () => {
             <div className="absolute inset-0 bg-gradient-to-b from-black/10 to-black/50" />
 
             <img
-              src={story.user.profile_picture}
+              src={story.user?.profile_picture || sampleUser}
               alt=""
               className="absolute top-3 left-3 size-8 rounded-full object-cover ring-2 ring-white/80 z-10"
             />
@@ -77,7 +83,7 @@ const StoriesBar = () => {
       {showCreate && (
         <StoryModel
           onClose={() => setShowCreate(false)}
-          onCreate={(story) => setStories((prev) => [story, ...prev])}
+          onCreate={() => fetchStories()}
         />
       )}
 

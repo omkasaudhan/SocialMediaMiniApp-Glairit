@@ -3,11 +3,53 @@ import fs from 'fs'
 import imagekit from "../Config/imagekit.js"
 import Connection from "../models/Connection.js"
 import Post from "../models/Post.js"
+import { clerkClient } from "@clerk/express"
 
 export const getUserData = async (req, res) =>{
     try {
         const { userId } = req.auth
-        const user = await User.findById(userId)
+        let user = await User.findById(userId)
+
+        // If user is not yet in MongoDB, auto-create from Clerk
+        if (!user) {
+            try {
+                const clerkUser = await clerkClient.users.getUser(userId)
+                if (clerkUser) {
+                    const primaryEmail = clerkUser.emailAddresses && clerkUser.emailAddresses.length > 0
+                        ? clerkUser.emailAddresses[0].emailAddress
+                        : `user_${userId}@glairit.com`
+
+                    let username = primaryEmail.split('@')[0]
+                    let isUnique = false
+                    let attempts = 0
+                    while (!isUnique && attempts < 5) {
+                        const existing = await User.findOne({ username })
+                        if (existing && existing._id !== userId) {
+                            username = `${username}${Math.floor(1000 + Math.random() * 9000)}`
+                            attempts++
+                        } else {
+                            isUnique = true
+                        }
+                    }
+
+                    const fullName = `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || username
+                    user = await User.findByIdAndUpdate(
+                        userId,
+                        {
+                            _id: userId,
+                            email: primaryEmail,
+                            full_name: fullName,
+                            profile_picture: clerkUser.imageUrl || '',
+                            username
+                        },
+                        { upsert: true, new: true }
+                    )
+                }
+            } catch (clerkErr) {
+                console.error("Auto-sync from Clerk error:", clerkErr.message)
+            }
+        }
+
         if(!user){
             return res.json({success: false, message: "User not found"})
         }
