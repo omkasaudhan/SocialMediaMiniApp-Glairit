@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useRef, useState, useEffect } from 'react'
 import { Image, X, Loader2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { dummyUserData } from '../assets/assets'
 import { useSelector } from 'react-redux'
 import { useAuth } from '@clerk/react'
 import api from '../api/axios'
+import toast from 'react-hot-toast'
 
 const MAX_IMAGES = 4
 
@@ -17,10 +18,13 @@ const CreatePost = () => {
   const [images, setImages] = useState([]) // [{ file, preview }]
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState(null) // { type: 'error' | 'success', text }
-  const { getToken } = useAuth
-  // Free object URLs when the component unmounts
+  const { getToken } = useAuth()
+
+  const imagesRef = useRef(images)
+  imagesRef.current = images
+
   useEffect(() => {
-    return () => images.forEach((img) => URL.revokeObjectURL(img.preview))
+    return () => imagesRef.current.forEach((img) => URL.revokeObjectURL(img.preview))
   }, [])
 
   const handleImageChange = (e) => {
@@ -75,14 +79,11 @@ const CreatePost = () => {
         Authorization: `Bearer ${await getToken()}`
       }})
 
-      if( data.success ){
-        setTimeout(() => navigate('/'), 800)
-      } else {
+      if( !data.success ){
         console.log(data.message)
         throw new Error(data.message)
       }
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
+  
       setStatus({ type: 'success', text: 'Post published.' })
       setContent('')
       images.forEach((img) => URL.revokeObjectURL(img.preview))
@@ -90,7 +91,7 @@ const CreatePost = () => {
 
       setTimeout(() => navigate('/'), 800)
     } catch (error) {
-      setStatus({ type: 'error', text: 'Could not publish your post. Try again.' })
+        toast.error(error.message)
     } finally {
       setLoading(false)
     }

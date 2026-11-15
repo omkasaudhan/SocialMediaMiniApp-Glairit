@@ -8,16 +8,19 @@ import { useAuth } from '@clerk/react'
 import { useEffect } from 'react'
 import { useState } from 'react'
 import api from '../api/axios'
+import toast from 'react-hot-toast'
+
 
 const Feed = () => {
   const [feeds, setFeeds] = useState([])
   const [loading, setLoading] = useState(true)
-  const {getToken} = useAuth
+  const {getToken} = useAuth()
 
   const fetchFeeds = async () => {
     try {
       setLoading(true)
-      const {data} = await api.get('/api/post/feed', {headers: {Authorization: `Bearer ${await getToken()}`}})
+      const token = await getToken()
+      const {data} = await api.get('/api/post/feed', {headers: {Authorization: `Bearer ${token}`}})
       if (data.success){
         setFeeds(data.posts)
       }else{
@@ -25,7 +28,9 @@ const Feed = () => {
       }
     } catch (error) {
       toast.error(error.message)
-    }    
+    } finally {
+      setLoading(false)
+    }   
   }
 
   useEffect(()=>{

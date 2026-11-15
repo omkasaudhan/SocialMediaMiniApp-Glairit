@@ -1,9 +1,10 @@
 import {useState } from 'react'
-import {X, Image as ImageIcon, Type,} from 'lucide-react'
+import {X, Image as ImageIcon, Type, Sparkle, Upload, TextIcon,} from 'lucide-react'
 import {dummyUserData} from '../../assets/assets'
 import { useAuth } from '@clerk/react'
 import api from '../../api/axios'
-
+import { useSelector } from 'react-redux'
+import toast from 'react-hot-toast'
 const STORY_COLORS = ['#4f46e5', '#7c3aed', '#db2777', '#e11d48', '#ea580c', '#059669', '#0891b2', '#1e293b']
 
 const StoryModel = ({ onClose, onCreate }) => {
@@ -11,7 +12,11 @@ const StoryModel = ({ onClose, onCreate }) => {
   const [text, setText] = useState('')
   const [color, setColor] = useState(STORY_COLORS[0])
   const [media, setMedia] = useState(null) // { url, type }
-  const {getTaken} = useAuth
+  const [previewUrl, setPreviewUrl] = useState('')
+  
+  const { getToken } = useAuth()
+  const currentUser = useSelector((state)=>state.user.value)
+   
 
   const MAX_VIDEO_DURATION = 60;
   const MAX_VIDEO_SIZE_MB = 50;
@@ -19,12 +24,14 @@ const StoryModel = ({ onClose, onCreate }) => {
   const handleMedia = (e) => {
     const file = e.target.files?.[0]
     if(file){
-      if(file.type.startWith("video")){
+      if(file.type.startsWith("video")){
         if(file.size > MAX_VIDEO_SIZE_MB * 1024 * 1024){
           toast.error(`Video file size cannot exceed ${MAX_VIDEO_SIZE_MB}`)
           setMedia(null)
+          setPreviewUrl('')
           return;
         }
+
         const video = document.createElement('video');
         video.preload = 'metadata'
         video.onloadedmetadata = ()=>{
@@ -32,6 +39,7 @@ const StoryModel = ({ onClose, onCreate }) => {
             if(video.duration > MAX_VIDEO_DURATION){
                 toast.error("Video duration cannot exceed 1 minute.")
                 setMedia(null)
+                setPreviewUrl('')
             }else{
                 setMedia(file)
                 setPreviewUrl(URL.createObjectURL(file))
@@ -53,6 +61,8 @@ const StoryModel = ({ onClose, onCreate }) => {
   const canCreate = mode === 'text' ? text.trim() : media
 
   const handleCreate = async () => {
+    if(!canCreate) return
+
     const media_type = mode === 'media' ? media?.type.startsWith('image') ? 'image' : "video" : "text"
     if(media_type === "text" && !text){
       throw new Error("Please enter some text")
@@ -62,37 +72,37 @@ const StoryModel = ({ onClose, onCreate }) => {
     formData.append('content', text)
     formData.append('media_type', media_type)
     formData.append('media', media)
-    formData.append('background_color', background)
+    formData.append('background_color', color)
     
     const token = await getToken()
     try {
       const { data } = await api.post('/api/story/create', formData, {headers: {Authorization: `Bearer ${token}`}
       })
       if (data.success){
-        setShowModal(false)
         toast.success("Story created Succesfully")
-        fetchStories()
+        if(onCreate) onCreate(data.story || data.data)
+        onClose()
       }else{
         toast.error(data.message)
       }
     } catch (error) {
-      
+       toast.error(error.message)
     }
     
     if (!canCreate) return
-    const now = new Date().toISOString()
-    onCreate({
-      _id: `local_${Date.now()}`,
-      user: dummyUserData,
-      content: mode === 'text' ? text.trim() : '',
-      media_url: mode === 'media' ? media.url : '',
-      media_type: mode === 'media' ? media.type : 'text',
-      background_color: color,
-      createdAt: now,
-      updatedAt: now,
-    })
-    // TODO: send to your API, e.g. await api.post('/api/story/create', formData)
-    onClose()
+    // const now = new Date().toISOString()
+    // onCreate({
+    //   _id: `local_${Date.now()}`,
+    //   user: currentUser,
+    //   content: mode === 'text' ? text.trim() : '',
+    //   media_url: mode === 'media' ? media.url : '',
+    //   media_type: mode === 'media' ? media.type : 'text',
+    //   background_color: color,
+    //   createdAt: now,
+    //   updatedAt: now,
+    // })
+    // // TODO: send to your API, e.g. await api.post('/api/story/create', formData)
+    // onClose()
   }
 
   return (
@@ -119,11 +129,11 @@ const StoryModel = ({ onClose, onCreate }) => {
             htmlFor="story-media"
             className="h-56 rounded-lg border-2 border-dashed border-indigo-300 bg-indigo-50 flex items-center justify-center overflow-hidden cursor-pointer text-sm text-indigo-600"
           >
-            {media ? (
-              media.type === 'video' ? (
-                <video src={media.url} className="w-full h-full object-cover" muted />
+            {media && previewUrl ? (
+              media.type.startsWith ('video') ? (
+                <video src={previewUrl} className="w-full h-full object-cover" muted />
               ) : (
-                <img src={media.url} alt="Story preview" className="w-full h-full object-cover" />
+                <img src={previewUrl} alt="Story preview" className="w-full h-full object-cover" />
               )
             ) : (
               'Choose a photo or video'
@@ -154,24 +164,25 @@ const StoryModel = ({ onClose, onCreate }) => {
               onClick={() => setMode('text')}
               className={`flex items-center gap-1 text-sm px-3 py-1.5 rounded-md cursor-pointer ${mode === 'text' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}
             >
-              <Type className="w-4 h-4" /> Text
+              <TextIcon size={18} /> Text
             </button>
-            <button
-              type="button"
-              onClick={() => setMode('media')}
-              className={`flex items-center gap-1 text-sm px-3 py-1.5 rounded-md cursor-pointer ${mode === 'media' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}
+            <label htmlFor="story-media"
+              className={`flex items-center gap-1 text-sm px-3 py-1.5 rounded-md cursor-pointer ${
+                mode === 'media' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
+              }`}
             >
-              <ImageIcon className="w-4 h-4" /> Photo / video
-            </button>
+              <Upload size={18} /> Photo / video
+            </label>
+
           </div>
 
           <button
             type="button"
-            onClick={handleCreate}
+            onClick={()=> toast.promise(handleCreate(), {loading: 'Saving... ', error: (err)=> toast.error(err.message)})}
             disabled={!canCreate}
-            className="text-sm bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 active:scale-95 transition text-white font-medium px-5 py-2 rounded-md cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100"
+            className="flex item-center gap-1.5 text-sm bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 active:scale-95 transition text-white font-medium px-5 py-2 rounded-md cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100"
           >
-            Share story
+           < Sparkle size={18} /> Create Story
           </button>
         </div>
       </div>

@@ -56,11 +56,6 @@ const EditProfile = ({ user, onClose, onSave }) => {
 
   const handleSaveProfile = async (e) => {
     e.preventDefault()
-
-    if (!form.full_name.trim()) return setError('Name is required.')
-    if (!form.username.trim()) return setError('Username is required.')
-    if (/\s/.test(form.username.trim())) return setError('Username cannot contain spaces.')
-
     setSaving(true)
     try {
       

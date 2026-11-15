@@ -6,6 +6,8 @@ import TimeAgo from './TimeAgo'
 import { useSelector } from 'react-redux'
 import { useAuth } from '@clerk/react'
 import api from '../../api/axios'
+import toast from 'react-hot-toast'
+
 const renderContent = (text) =>
   text.split(/(#\w+)/g).map((part, i) =>
     part.startsWith('#') ? (
@@ -19,9 +21,9 @@ const renderContent = (text) =>
 
 const PostCard = ({ post }) => {
   const navigate = useNavigate()
+  const { getToken } = useAuth()
   const currentUser = useSelector((state)=>state.user.value)
   // const currentUser = dummyUserData
-  const { getToken } = useAuth
   const [likes, setLikes] = useState(post.likes_count)
   const [comments, setComments] = useState([])
   const [showComments, setShowComments] = useState(false)
@@ -120,7 +122,7 @@ const PostCard = ({ post }) => {
       <div className="flex items-center gap-5 text-slate-600 text-sm pt-2 border-t border-gray-300">
         <button
           type="button"
-          onClick={toggleLike}
+          onClick={handleLike}
           aria-pressed={liked}
           aria-label="Like"
           className="flex items-center gap-1 cursor-pointer"

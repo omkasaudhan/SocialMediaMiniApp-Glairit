@@ -4,13 +4,30 @@ import { Plus } from 'lucide-react'
 import StoryModel from './StoryModel'
 import StoryViewer from './StoryViewer'
 import TimeAgo from './TimeAgo'
+import { useAuth } from '@clerk/react'
 
 
 const hideScrollbar = '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
 const StoriesBar = () => {
+  const { getToken } = useAuth()
   const [stories, setStories] = useState(dummyStoriesData)
   const [showCreate, setShowCreate] = useState(false)
   const [viewIndex, setViewIndex] = useState(null)
+
+  const fetchStories = async () => {
+      try {
+        const token = await getToken()
+        const { data } = await api.get('/api/story/get', {headers: {Authorization: `Bearer ${token}`}
+      })
+      if (data.success){
+        setStories(data.stories)
+      }else{
+        toast.error(data.message)
+      }
+      } catch (error) {
+        toast.error(error.message)
+      }
+  }
 
   return (
     <>
