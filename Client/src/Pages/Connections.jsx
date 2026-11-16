@@ -1,41 +1,73 @@
-import React, { useState } from 'react'
-import { Clock, UserCheck, UserPlus, Users } from 'lucide-react'
-import {dummyConnectionsData,dummyFollowersData,
-  dummyFollowingData,dummyPendingConnectionsData,} from '../assets/assets'
+import React, { useEffect, useState } from 'react'
+import { Clock, UserCheck, UserPlus, UserRoundPen, Users } from 'lucide-react'
+// import {dummyConnectionsData,dummyFollowersData,
+//   dummyFollowingData,dummyPendingConnectionsData,} from '../assets/assets'
 import Follower from '../Components/Connections/Followers';
 import Following from '../Components/Connections/Following';
 import Pending from '../Components/Connections/Pending';
 import ConnectionList from '../Components/Connections/ConnectionList';
+import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@clerk/react';
+import { fetchConnections } from '../features/connections/connectionsSlice';
+import toast from 'react-hot-toast';
+import api from '../api/axios';
 
 const Connections = () => {
   const [currentTab, setCurrentTab] = useState('followers')
+  const navigate = useNavigate()
+  const { getToken } = useAuth()
+  const dispatch = useDispatch()
 
   // Local state so Unfollow / Accept update the page instantly (replace with API data later)
-  const [followers] = useState(dummyFollowersData)
-  const [following, setFollowing] = useState(dummyFollowingData)
-  const [pending, setPending] = useState(dummyPendingConnectionsData)
-  const [connections, setConnections] = useState(dummyConnectionsData)
+  // const [followers] = useState(dummyFollowersData)
+  // const [following, setFollowing] = useState(dummyFollowingData)
+  // const [pending, setPending] = useState(dummyPendingConnectionsData)
+  // const [connections, setConnections] = useState(dummyConnectionsData)
 
-  const handleUnfollow = (userId) => {
-    setFollowing((prev) => prev.filter((u) => u._id !== userId))
-    // TODO: await api.post('/api/user/unfollow', { id: userId })
-  }
+  const {connections, pending, followers, following} = useSelector((state)=>state.connections)
 
-  const handleAccept = (userId) => {
-    const accepted = pending.find((u) => u._id === userId)
-    if (!accepted) return
-    setPending((prev) => prev.filter((u) => u._id !== userId))
-    // Avoid duplicates if the user is already in the connections list
-    setConnections((prev) => (prev.some((u) => u._id === userId) ? prev : [...prev, accepted]))
-    // TODO: await api.post('/api/user/accept', { id: userId })
-  }
+  const handleUnfollow = async (userId) => {
+    try {
+      const { data } = await api.post('/api/user/unfollow', { id: userId }, {
+        headers: {Authorization: `Bearer ${await getToken()}`}
+      })
+      if(data.success){
+        toast.success(data.message)
+        dispatch(fetchConnections(await getToken()))
+      }else{
+        toast(data.message)
+      } 
+    } catch(error){
+      toast.error(error.message)
+    }}
+
+  const handleAccept = async (userId) => {
+    try {
+      const { data } = await api.post('/api/user/accept', { id: userId }, {
+        headers: {Authorization: `Bearer ${await getToken()}`}
+      })
+      if(data.success){
+        toast.success(data.message)
+        dispatch(fetchConnections(await getToken()))
+      }else{
+        toast(data.message)
+      } 
+    } catch(error){
+      toast.error(error.message)
+    }}
 
   const tabs = [
     { key: 'followers', label: 'Followers', Icon: Users, count: followers.length },
     { key: 'following', label: 'Following', Icon: UserCheck, count: following.length },
-    { key: 'pending', label: 'Pending', Icon: Clock, count: pending.length },
+    { key: 'pending', label: 'Pending', Icon: UserRoundPen, count: pending.length },
     { key: 'connections', label: 'Connections', Icon: UserPlus, count: connections.length },
   ]
+   useEffect(()=>{
+    getToken().then((token)=>{
+      dispatch(fetchConnections(token))
+    })
+   },[])
 
   return (
     <div className="min-h-screen bg-slate-50">

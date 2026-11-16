@@ -2,8 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { ImageIcon, SendHorizonal, X } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 import { dummyConnectionsData, dummyMessagesData } from '../assets/assets'
+import { useDispatch, useSelector } from 'react-redux'
+import { useAuth } from '@clerk/react'
+import toast from 'react-hot-toast'
+import api from '../api/axios'
+import { addMessage, fetchMessages, resetMessages } from '../features/messages/messagesSlice'
 
-
+ 
 const CURRENT_USER_ID = 'user_2zwZSCMRXQ9GaEEVLgm6akQo96i'
 
 const formatTime = (date) =>
@@ -12,13 +17,16 @@ const formatTime = (date) =>
 const ChatBox = () => {
   const { userId } = useParams()
   const messagesEndRef = useRef(null)
-
+  const { getToken } = useAuth()
+  const dispatch = useDispatch()
+  const currentUser = useSelector((state)=>state.user.value)
+  const { messages } = useSelector((state)=>state.messages || {})
   const [text, setText] = useState('')
   const [image, setImage] = useState(null) // { file, preview }
-  const [messages, setMessages] = useState(dummyMessagesData)
-
+  // const [messages, setMessages] = useState(dummyMessagesData)
+  const connections = useSelector((state)=>state.connections.connections)
   // The person you are chatting with
-  const user = dummyConnectionsData.find((u) => u._id === userId) || dummyConnectionsData[0]
+  const user = connections.find((u) => u._id === userId) || dummyConnectionsData[0]
 
   // Only messages between me and this user, oldest first
   const conversation = useMemo(
@@ -26,8 +34,8 @@ const ChatBox = () => {
       messages
         .filter(
           (m) =>
-            (m.from_user_id === CURRENT_USER_ID && m.to_user_id === user._id) ||
-            (m.from_user_id === user._id && m.to_user_id === CURRENT_USER_ID)
+            (m.from_user_id === currentUser?._id && m.to_user_id === user._id) ||
+            (m.from_user_id === user._id && m.to_user_id === currentUser?._id)
         )
         .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)),
     [messages, user._id]
@@ -36,13 +44,13 @@ const ChatBox = () => {
   // Scroll to the newest message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [conversation.length])
+  }, [messages])
 
   // Release the preview URL on unmount
-  useEffect(() => {
-    return () => image && URL.revokeObjectURL(image.preview)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // useEffect(() => {
+  //   return () => image && URL.revokeObjectURL(image.preview)
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [])
 
   const handleImageChange = (e) => {
     const file = e.target.files?.[0]
@@ -57,36 +65,60 @@ const ChatBox = () => {
     setImage(null)
   }
 
-  const sendMessage = () => {
-    if (!text.trim() && !image) return
-
-    const now = new Date().toISOString()
-    const newMessage = {
-      _id: `local_${Date.now()}`,
-      from_user_id: CURRENT_USER_ID,
-      to_user_id: user._id,
-      text: text.trim(),
-      message_type: image ? 'image' : 'text',
-      media_url: image ? image.preview : '',
-      seen: false,
-      createdAt: now,
-      updatedAt: now,
-    }
-
-    // TODO: replace with your API call, e.g.
-    // const fd = new FormData(); fd.append('to_user_id', user._id); fd.append('text', text); image && fd.append('image', image.file)
-    // await api.post('/api/message/send', fd)
-    setMessages((prev) => [...prev, newMessage])
-    setText('')
-    setImage(null) // preview URL stays alive because the message uses it
-  }
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
+  const fetchUserMessages = async () => {
+    try {
+      const token = await getToken()
+      dispatch(fetchMessages({token, userId}))
+    } catch (error) {
+      toast.error(error.message)
     }
   }
+
+  const sendMessage = async () => {
+    try{   
+       if (!text.trim() && !image) return
+
+       const token = await getToken()
+       const formData = new FormData() 
+       formData.append('to_user_id', userId)
+       formData.append('text', text)
+       image && formData.append('image', image.file)
+
+       const { data } = await api.post('/api/message/send', formData, {
+        headers: { Authorization: `Bearer ${token}`}
+       })
+       if (data.success){
+        setText('')
+        setImage(null)
+        dispatch(addMessage(data.message))
+       }else{
+        throw new Error(data.message)
+       }
+      }catch(error){
+      toast.error(error.message)
+    }
+  }
+
+  useEffect(()=>{
+    fetchUserMessages()
+    return ()=>{
+      dispatch(resetMessages())
+    }
+  },[userId])
+
+  // useEffect(()=>{
+  //   if(connections.length > 0){
+  //     const foundUser = connections.find(connection => connection._id === userId)
+  //     setUser(foundUser || null)
+  //   }
+  // },[connections, userId])
+
+  // const handleKeyDown = (e) => {
+  //   if (e.key === 'Enter' && !e.shiftKey) {
+  //     e.preventDefault()
+  //     sendMessage()
+  //   }
+  // }
 
   const canSend = text.trim() || image
 
@@ -111,7 +143,7 @@ const ChatBox = () => {
           )}
 
           {conversation.map((message) => {
-            const sentByMe = message.from_user_id === CURRENT_USER_ID
+            const sentByMe = message.from_user_id === currentUser?._id
             return (
               <div
                 key={message._id}
@@ -163,7 +195,7 @@ const ChatBox = () => {
               type="text"
               className="flex-1 outline-none text-slate-700 text-sm"
               placeholder="Type a message..."
-              onKeyDown={handleKeyDown}
+              // onKeyDown={handleKeyDown}
               onChange={(e) => setText(e.target.value)}
               value={text}
             />

@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import Login from './Pages/Login'
 import Feed from './Pages/Feed'
 import Messages from './Pages/Messages'
@@ -7,16 +7,21 @@ import ChatBox from './Pages/ChatBox'
 import Connections from './Pages/Connections'
 import Discover from './Pages/Discover'
 import Profile from './Pages/Profile'
+import Notification from './Components/Notification'
 import { useUser, useAuth } from '@clerk/react'
 import Layout from './Pages/Layout' 
-import { Toaster } from 'react-hot-toast'
-import { useEffect } from 'react'
+import toast, { Toaster } from 'react-hot-toast'
+import { useEffect, useRef } from 'react'
 import { fetchUser } from './features/user/userSlice'
 import { useDispatch } from 'react-redux'
+import { fetchConnections } from './features/connections/connectionsSlice'
+import { addMessage } from './features/messages/messagesSlice'
 
 function App() {
   const { user, isLoaded } = useUser() 
   const { getToken } = useAuth()
+  const {pathname} = useLocation()
+  const pathnameRef = useRef(pathname)
   const dispatch = useDispatch()
 
   useEffect(() => {
@@ -24,9 +29,9 @@ function App() {
       if (user) {
         try {
           const token = await getToken()
-          if (token) {
-            dispatch(fetchUser(token))
-          }
+          dispatch(fetchUser(token))
+          dispatch(fetchConnections(token))
+          
         } catch (error) {
           console.error("Error fetching auth token:", error)
         }
@@ -34,6 +39,29 @@ function App() {
     }
     fetchData()
   }, [user, getToken, dispatch])
+
+  useEffect(()=>{
+    pathnameRef.current = pathname
+  },[pathname])
+
+  useEffect(()=>{
+    if(user){
+      const eventSource = new EventSource(import.meta.env.VITE_BASEURL + '/api/message/' + user.id);
+      eventSource.onmessage =(event)=>{
+        const message = JSON.parse(event.data)
+        if(pathnameRef.current === ('/messages/' + message.from_user_id._id)){
+          dispatch(addMessage(message))
+        }else{
+          toast.custom(
+            (t)=><Notification t={t} message={message} />
+          ,{position: "bottom-right"})
+        }
+      }
+      return ()=>{
+        eventSource.close()
+      }
+    }
+  },[user, dispatch])
 
   if (!isLoaded) {
     return (

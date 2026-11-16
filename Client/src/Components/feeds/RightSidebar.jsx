@@ -1,8 +1,46 @@
 import {useNavigate} from 'react-router-dom'
 import {assets,dummyRecentMessagesData,} from '../../assets/assets'
 import TimeAgo from './TimeAgo'
+import { useEffect, useState } from 'react'
+import { useAuth, useUser } from '@clerk/react'
+import api from '../../api/axios'
+import toast from 'react-hot-toast'
 const RightSidebar = () => {
   const navigate = useNavigate()
+  const [messages, setMessages] = useState([])
+  const {user} = useUser()
+  const {getToken} = useAuth()
+  const fetchRecentMessages = async () => {
+    try {
+      const token = await getToken()
+      const { data } = await api.get('/api/user/recent-messages',{
+        headers: { Authorization: `Bearer ${token}`}
+      })
+      if(data.success){
+        const groupedMessages = data.message.reduce((acc, message)=>{
+          const senderId = message.from_user_id._id;
+          if(!acc[senderId] || new Date(message.createdAt) > new Date(acc[senderId].createdAt)){
+            acc[senderId] = message
+          }
+          return acc;
+        },{})
+        const sortedMessages = Object.values(groupedMessages).sort((a, b)=> new Date(b.createdAt) - new Date(a.createdAt))
+        setMessages(sortedMessages)
+      }else{
+        toast.error(data.message)
+      }
+    } catch (error) {
+        toast.error(error.message)
+    }  
+  }
+  
+  useEffect(()=>{
+    if(user){
+      fetchRecentMessages()
+      const intervalid = setInterval(fetchRecentMessages, 30000)
+      return ()=> {clearInterval(intervalid)}
+    }
+      },[user])
 
   return (
     <aside className="max-xl:hidden sticky top-6 w-72 shrink-0 space-y-4">
@@ -20,7 +58,7 @@ const RightSidebar = () => {
       <div className="bg-white p-4 rounded-md shadow">
         <h3 className="font-semibold text-slate-800 text-sm mb-4">Recent Messages</h3>
         <div className="flex flex-col gap-1 max-h-56 overflow-y-auto">
-          {dummyRecentMessagesData.map((message) => (
+          {messages.map((message) => (
             <button
               key={message._id}
               type="button"

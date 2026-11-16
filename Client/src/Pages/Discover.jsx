@@ -1,22 +1,54 @@
-import React, { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Search, MapPin, UserPlus, UserCheck, Plus, Check, MessageCircle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { dummyConnectionsData, dummyUserData } from '../assets/assets'
+import { useDispatch, useSelector } from 'react-redux'
+import Loading from '../Components/loading'
+import api from '../api/axios'
+import { useAuth } from '@clerk/react'
+import { fetchUser } from '../features/user/userSlice'
 
 const Discover = () => {
+  const dispatch = useDispatch()
   const navigate = useNavigate()
-  const currentUser = dummyUserData
-
+  // const currentUser = dummyUserData
+  const currentUser = useSelector((state)=>state.user.value)
+   
   const [input, setInput] = useState('')
-  const [users] = useState(dummyConnectionsData)
+  // const [users] = useState(dummyConnectionsData)
+  const [users] = useState([])
 
   // Local state so the buttons respond instantly (replace with API data later)
   const [followingIds, setFollowingIds] = useState(currentUser.following)
   const [connectionIds] = useState(currentUser.connections)
   const [pendingIds, setPendingIds] = useState([])
-
+  const [loading, setLoading] = useState(false)
   const originallyFollowing = currentUser.following
+  const { getToken } = useAuth()
 
+  const handleSearch = async (e) =>{
+    if(e.key === 'Enter'){
+      try {
+        setUsers([])
+        setLoading(true)
+        const { data } = await api.post('/api/user/discover',{input}, {
+          headers: {Authorization: `Bearer ${await getToken()}`
+        }})  
+        data.success ? setUsers(data.users) : toast.error(data.message) 
+        setLoading(false)
+        setInput('')
+      } catch (error) {
+        toast.error(error.message)
+      }
+      setLoading(false)
+    }
+  }
+
+  useEffect(()=>{
+    getToken().then((token)=>{
+      dispatch(fetchUser(token))
+    })
+  })
   const filteredUsers = useMemo(() => {
     const q = input.trim().toLowerCase()
     if (!q) return users

@@ -5,7 +5,7 @@ import imagekit from '../Config/imagekit.js'
 const connections = {}
 
 export const sseController = (req, res) => {
-    const userId = req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
+    const {userId} = req.auth()
     console.log('New client connected: ', userId)
 
     // Set headers for SSE
@@ -27,7 +27,7 @@ export const sseController = (req, res) => {
 // send Message
 export const sendMessage = async (req, res) => {
     try {
-        const userId = req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
+        const {userId} = req.auth()
         const { to_user_id, text } = req.body
         const image = req.file 
 
@@ -67,7 +67,6 @@ export const sendMessage = async (req, res) => {
             connections[to_user_id].write(`data: ${JSON.stringify(messageWithUserData)}\n\n`)
         }
     } catch (error) {
-        console.error('Error sending message:', error)  
         res.json({ success: false, message: error.message })
     }
 }
@@ -75,7 +74,7 @@ export const sendMessage = async (req, res) => {
 // Get Chat Messages
 export const getChatMessages = async (req, res) => {
     try {
-        const userId = req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
+        const {userId} = req.auth()
         const { to_user_id } = req.body
         const messages = await Message.find({
             $or: [
@@ -97,7 +96,7 @@ export const getChatMessages = async (req, res) => {
 
 export const getUserRecentMessages = async (req, res) => {
     try {
-        const userId = req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
+        const { userId }= req.auth(); 
         const messages = await Message.find({
             $or: [
                 { from_user_id: userId },
@@ -107,7 +106,6 @@ export const getUserRecentMessages = async (req, res) => {
 
         res.json({ success: true, data: messages })
     } catch (error) {
-        console.error('Error fetching recent messages:', error)
-        res.json({ success: false, message: error.message })
+         res.json({ success: false, message: error.message })
     }
 }
