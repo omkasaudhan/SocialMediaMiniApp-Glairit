@@ -35,18 +35,29 @@ const UserCard = ({ user, children }) => {
       <img
         src={user.profile_picture}
         alt={user.full_name}
-        className="rounded-full size-12 shadow-md object-cover shrink-0"
+        onClick={() => navigate(`/profile/${user._id}`)}
+        className="rounded-full size-12 shadow-md object-cover shrink-0 cursor-pointer hover:opacity-90 transition"
       />
 
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-slate-700 truncate">{user.full_name}</p>
-        <p className="text-slate-500 text-sm truncate">@{user.username}</p>
+        <p
+          onClick={() => navigate(`/profile/${user._id}`)}
+          className="font-medium text-slate-700 truncate cursor-pointer hover:underline"
+        >
+          {user.full_name}
+        </p>
+        <p
+          onClick={() => navigate(`/profile/${user._id}`)}
+          className="text-slate-500 text-sm truncate cursor-pointer hover:underline"
+        >
+          @{user.username}
+        </p>
         {/* Newlines in the bio collapse to spaces, so it shows on one truncated line */}
         <p className="text-xs text-gray-600 truncate">{user.bio}</p>
 
         <div className="flex flex-col gap-2 mt-4">
-          <button onClick={handleFollow} disabled={currentUser?.following.includes(user._id), } className='w-full py-2 rounded-md flex justify-center items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 active:scale-95 transition text-white cursor-pointer'>
-              <UserPlus className='w-4 h-4'/> {currentUser?.following.includes(user._id) ? 'following': 'follow'}
+          <button onClick={handleFollow} disabled={currentUser?.following?.includes(user._id)} className='w-full py-2 rounded-md flex justify-center items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 active:scale-95 transition text-white cursor-pointer'>
+              <UserPlus className='w-4 h-4'/> {currentUser?.following?.includes(user._id) ? 'following': 'follow'}
           </button>
           
           <button

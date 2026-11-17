@@ -59,11 +59,11 @@ const StoriesBar = () => {
             className="relative shrink-0 w-30 aspect-[3/4] rounded-lg overflow-hidden cursor-pointer hover:shadow-lg active:scale-95 transition text-left"
             style={{ backgroundColor: story.background_color }}
           >
-            {story.media_type === 'image' && (
-              <img src={story.media_url} alt="" className="absolute inset-0 w-full h-full object-cover" />
+            {(story.media_type === 'image') && (
+              <img src={story.media_url || story.media_urls} alt="" className="absolute inset-0 w-full h-full object-cover" />
             )}
-            {story.media_type === 'video' && (
-              <video src={story.media_url} muted preload="metadata" className="absolute inset-0 w-full h-full object-cover" />
+            {(story.media_type === 'video') && (
+              <video src={story.media_url || story.media_urls} muted preload="metadata" className="absolute inset-0 w-full h-full object-cover" />
             )}
             <div className="absolute inset-0 bg-gradient-to-b from-black/10 to-black/50" />
 

@@ -12,13 +12,13 @@ const ConnectionList = ({ users }) => {
   const { getToken } = useAuth()
   const currentUser = useSelector((state)=>state.user.value)
   
-  if (users.length === 0) {
+  if (!users || users.length === 0) {
     return <p className="text-slate-500 text-sm">No connections yet.</p>
   }
 
    const handleConnectionRequest = async (user) =>{
-    if(currentUser.connections.includes(user._id)){
-      return navigate(`/messages/'${user._id}`)
+    if(currentUser?.connections?.includes(user._id)){
+      return navigate(`/messages/${user._id}`)
     }
     try {
       const { data } = await api.post('/api/user/connect', {id:user._id}, {

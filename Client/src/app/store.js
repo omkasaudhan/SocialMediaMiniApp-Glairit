@@ -6,7 +6,9 @@ import messagesReducer from '../features/messages/messagesSlice.js'
 export const store = configureStore({
     reducer: {
         user: userReducer,
-        message: messagesReducer,
+        connections: connectionReducer,
         connection: connectionReducer,
+        messages: messagesReducer,
+        message: messagesReducer,
     }
 })

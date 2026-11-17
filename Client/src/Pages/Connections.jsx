@@ -25,7 +25,7 @@ const Connections = () => {
   // const [pending, setPending] = useState(dummyPendingConnectionsData)
   // const [connections, setConnections] = useState(dummyConnectionsData)
 
-  const {connections, pending, followers, following} = useSelector((state)=>state.connections)
+  const {connections = [], pending = [], followers = [], following = []} = useSelector((state)=>state.connections || state.connection || {})
 
   const handleUnfollow = async (userId) => {
     try {
@@ -58,10 +58,10 @@ const Connections = () => {
     }}
 
   const tabs = [
-    { key: 'followers', label: 'Followers', Icon: Users, count: followers.length },
-    { key: 'following', label: 'Following', Icon: UserCheck, count: following.length },
-    { key: 'pending', label: 'Pending', Icon: UserRoundPen, count: pending.length },
-    { key: 'connections', label: 'Connections', Icon: UserPlus, count: connections.length },
+    { key: 'followers', label: 'Followers', Icon: Users, count: (followers || []).length },
+    { key: 'following', label: 'Following', Icon: UserCheck, count: (following || []).length },
+    { key: 'pending', label: 'Pending', Icon: UserRoundPen, count: (pending || []).length },
+    { key: 'connections', label: 'Connections', Icon: UserPlus, count: (connections || []).length },
   ]
    useEffect(()=>{
     getToken().then((token)=>{

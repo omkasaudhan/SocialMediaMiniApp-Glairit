@@ -5,7 +5,7 @@ import imagekit from '../Config/imagekit.js'
 const connections = {}
 
 export const sseController = (req, res) => {
-    const {userId} = req.auth()
+    const userId = req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
     console.log('New client connected: ', userId)
 
     // Set headers for SSE
@@ -27,7 +27,7 @@ export const sseController = (req, res) => {
 // send Message
 export const sendMessage = async (req, res) => {
     try {
-        const {userId} = req.auth()
+        const userId = req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
         const { to_user_id, text } = req.body
         const image = req.file 
 
@@ -59,7 +59,7 @@ export const sendMessage = async (req, res) => {
             media_url,
             message_type,
         })
-        res.json({ success: true, message: "Message sent successfully", data: message })
+        res.json({ success: true, message: message, data: message })
 
         // Send the message to the recipient if they are connected
         const messageWithUserData = await Message.findById(message._id).populate('from_user_id')
@@ -67,6 +67,7 @@ export const sendMessage = async (req, res) => {
             connections[to_user_id].write(`data: ${JSON.stringify(messageWithUserData)}\n\n`)
         }
     } catch (error) {
+        console.error('Error sending message:', error)  
         res.json({ success: false, message: error.message })
     }
 }
@@ -74,8 +75,8 @@ export const sendMessage = async (req, res) => {
 // Get Chat Messages
 export const getChatMessages = async (req, res) => {
     try {
-        const {userId} = req.auth()
-        const { to_user_id } = req.body
+        const userId = req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
+        const to_user_id = req.body?.to_user_id || req.query?.to_user_id
         const messages = await Message.find({
             $or: [
                 { from_user_id: userId, to_user_id },
@@ -87,7 +88,7 @@ export const getChatMessages = async (req, res) => {
             { from_user_id: to_user_id, to_user_id: userId, seen: false },
             { $set: { seen: true } }
         )
-        res.json({ success: true, data: messages })
+        res.json({ success: true, data: messages, messages })
     } catch (error) {
         console.error('Error fetching chat messages:', error)
         res.json({ success: false, message: error.message })
@@ -96,16 +97,20 @@ export const getChatMessages = async (req, res) => {
 
 export const getUserRecentMessages = async (req, res) => {
     try {
-        const { userId }= req.auth(); 
+        const userId = req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
         const messages = await Message.find({
             $or: [
                 { from_user_id: userId },
                 { to_user_id: userId },
             ]
-        }).sort({ createdAt: -1 })
+        })
+        .populate('from_user_id', 'full_name username profile_picture')
+        .populate('to_user_id', 'full_name username profile_picture')
+        .sort({ createdAt: -1 })
 
-        res.json({ success: true, data: messages })
+        res.json({ success: true, data: messages, messages })
     } catch (error) {
-         res.json({ success: false, message: error.message })
+        console.error('Error fetching recent messages:', error)
+        res.json({ success: false, message: error.message })
     }
 }

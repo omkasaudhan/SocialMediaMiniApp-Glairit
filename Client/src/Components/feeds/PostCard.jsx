@@ -31,24 +31,26 @@ const PostCard = ({ post }) => {
   const [shares, setShares] = useState(0)
   const [copied, setCopied] = useState(false)
 
-  const liked = likes.includes(currentUser._id)
+  const liked = Boolean(currentUser?._id && Array.isArray(likes) && likes.includes(currentUser._id))
 
   const handleLike = async () => {
     try{
-      const { data } = await api.post(`/api/post/like`, {postId: post._id},{headers: {Authorization: `Bearer ${await getToken()}`}})
+      const token = await getToken()
+      const { data } = await api.post(`/api/post/like`, {postId: post._id},{headers: {Authorization: `Bearer ${token}`}})
 
       if(data.success){
         toast.success(data.message)
         setLikes(prev =>{
-          if(prev.includes(currentUser._id)){
-            return prev.filter(id=> id !== currentUser._id)
+          const list = Array.isArray(prev) ? prev : []
+          if(list.includes(currentUser?._id)){
+            return list.filter(id=> id !== currentUser?._id)
           }else{
-                return [...prev, currentUser._id]
+            return [...list, currentUser?._id]
           }
         })
       }
     } catch (error) {
-      toast.success(error.message)
+      toast.error(error.message)
     }
   }
 
@@ -84,17 +86,17 @@ const PostCard = ({ post }) => {
       {/* Author */}
       <button
         type="button"
-        onClick={() => navigate(`/profile/${post.user._id}`)}
+        onClick={() => navigate(`/profile/${post.user?._id || ''}`)}
         className="inline-flex items-center gap-3 cursor-pointer text-left"
       >
-        <img src={post.user.profile_picture} alt="" className="size-10 rounded-full object-cover shadow" />
+        <img src={post.user?.profile_picture || '/default-avatar.png'} alt="" className="size-10 rounded-full object-cover shadow" />
         <div>
           <div className="flex items-center gap-1">
-            <span className="font-medium text-slate-900">{post.user.full_name}</span>
-            {post.user.is_verified && <BadgeCheck className="w-4 h-4 text-blue-500" />}
+            <span className="font-medium text-slate-900">{post.user?.full_name || 'User'}</span>
+            {post.user?.is_verified && <BadgeCheck className="w-4 h-4 text-blue-500" />}
           </div>
           <div className="text-gray-500 text-sm">
-            @{post.user.username} · {TimeAgo(post.createdAt)}
+            @{post.user?.username || 'user'} · {TimeAgo(post.createdAt)}
           </div>
         </div>
       </button>
@@ -105,7 +107,7 @@ const PostCard = ({ post }) => {
       )}
 
       {/* Images */}
-      {post.image_urls.length > 0 && (
+      {(post.image_urls || []).length > 0 && (
         <div className={`grid gap-2 ${post.image_urls.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
           {post.image_urls.map((img, i) => (
             <img

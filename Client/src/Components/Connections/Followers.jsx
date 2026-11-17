@@ -2,7 +2,7 @@ import React from 'react'
 import UserCard from './UserCard'
 
 const Follower = ({ users }) => {
-  if (users.length === 0) {
+  if (!users || users.length === 0) {
     return <p className="text-slate-500 text-sm">No followers yet.</p>
   }
 

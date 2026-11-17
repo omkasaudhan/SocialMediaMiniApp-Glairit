@@ -62,7 +62,7 @@ export const getUserData = async (req, res) =>{
 
 export const updateUserData = async (req, res) =>{
     try {
-        const {userId } = req.auth
+        const userId = req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
         let {username, bio, location, full_name } = req.body;
 
         const tempUser = await User.findById(userId)
@@ -138,26 +138,31 @@ export const updateUserData = async (req, res) =>{
 
 export const discoverUser = async (req, res) =>{
     try {
-        const {userId } = req.auth
-        const { input } = req.body
+        const userId = req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
+        const input = (req.body?.input || req.query?.input || '').trim()
 
-        if(!input){
-            return res.json({success: false, message: "Input is required"})
+        let query = {
+            _id: { $ne: userId, $nin: [null, ''] }
         }
-        const allUsers = await User.find(
-            {
+
+        if (input !== '') {
+            const regex = new RegExp(input, 'i')
+            query = {
+                _id: { $ne: userId, $nin: [null, ''] },
                 $or: [
-                    {username: new RegExp(input, 'i')},
-                    {email: new RegExp(input, 'i')},
-                    {full_name: new RegExp(input, 'i')},
-                    {location: new RegExp(input, 'i')},
+                    { username: regex },
+                    { email: regex },
+                    { full_name: regex },
+                    { location: regex },
                 ]
-        })
-        const filteredUsers = allUsers.filter( user => user._id !== userId);
-        res.json({success: true, users: filteredUsers})
+            }
+        }
+
+        const users = await User.find(query).limit(50)
+        res.json({ success: true, users })
     } catch (error) {
         console.log(error)
-        res.json({success: false, message: error.message})
+        res.json({ success: false, message: error.message })
     }
 }
 
@@ -165,7 +170,7 @@ export const discoverUser = async (req, res) =>{
 
 export const unfollowUser = async (req, res) =>{
     try {
-        const {userId } = req.auth
+        const userId = req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
         const { id } = req.body
 
         const user = await User.findById(userId)
@@ -190,7 +195,7 @@ export const unfollowUser = async (req, res) =>{
 
 export const followUser = async (req, res) =>{
     try {
-        const {userId } = req.auth
+        const userId = req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
         const { id } = req.body
 
         const user = await User.findById(userId)
@@ -216,7 +221,7 @@ export const followUser = async (req, res) =>{
 
 export const sendConnectionRequest = async (req, res) =>{
     try {
-        const {userId } = req.auth
+        const userId = req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
         const { id } = req.body
 
         const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -239,10 +244,14 @@ export const sendConnectionRequest = async (req, res) =>{
                 from_user_id: userId,
                 to_user_id: id,
             });
-            await inngest.send({
-                name: 'app/connection-request',
-                data: {connectionId: newConnection._id}
-            });
+            try {
+                await inngest.send({
+                    name: 'app/connection-request',
+                    data: {connectionId: newConnection._id}
+                });
+            } catch (inngestError) {
+                console.warn('Inngest connection-request notification skipped:', inngestError.message);
+            }
             return res.json({success: true, message: 'Connection request sent successfully'})
         } else if (connection.status === 'pending') {
             return res.json({success: false, message: 'You have already sent a connection request to this user'})   
@@ -258,15 +267,18 @@ export const sendConnectionRequest = async (req, res) =>{
 
 export const getUserConnections = async (req, res) =>{
     try {
-        const {userId } = req.auth
+        const userId = req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
         const user = await User.findById(userId).populate('connections followers following')
+        if (!user) {
+            return res.json({ success: true, connections: [], followers: [], following: [], pending: [], pendingConnections: [] })
+        }
         
-        const connections = user.connections
-        const followers = user.followers
-        const following = user.following
+        const connections = user.connections || []
+        const followers = user.followers || []
+        const following = user.following || []
 
         const pendingConnections = (await Connection.find({to_user_id: userId, status: 'pending'}).populate('from_user_id')).map(connection => connection.from_user_id)
-        res.json({success: true, connections, followers, following, pendingConnections})
+        res.json({success: true, connections, followers, following, pending: pendingConnections, pendingConnections})
     } catch (error) {
         console.log(error)
         res.json({success: false, message: error.message})
@@ -277,7 +289,7 @@ export const getUserConnections = async (req, res) =>{
 
 export const acceptConnectionRequest = async (req, res) =>{
     try {
-        const {userId } = req.auth
+        const userId = req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
         const { id } = req.body
 
         const connection = await Connection.findOne({from_user_id: id, to_user_id: userId, status: 'pending'})
@@ -306,7 +318,7 @@ export const acceptConnectionRequest = async (req, res) =>{
 
 export const getUserProfiles = async (req, res) =>{
     try {
-        const { profileId } = req.body
+        const profileId = req.body?.profileId || req.query?.profileId || req.params?.profileId || req.body?.userId || req.query?.userId || req.body?.id || req.query?.id
         const profile = await User.findById(profileId).populate('connections followers following')
         if(!profile){
             return res.json({success: false, message: 'User not found'})

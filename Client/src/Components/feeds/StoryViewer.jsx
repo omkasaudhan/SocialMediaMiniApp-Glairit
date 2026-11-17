@@ -55,9 +55,9 @@ const StoryViewer = ({ stories, index, setIndex, onClose }) => {
         {/* Header */}
         <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between text-white">
           <div className="flex items-center gap-2">
-            <img src={story.user.profile_picture} alt="" className="size-8 rounded-full object-cover border border-white/70" />
+            <img src={story.user?.profile_picture || '/default-avatar.png'} alt="" className="size-8 rounded-full object-cover border border-white/70" />
             <div className="leading-tight">
-              <p className="text-sm font-medium">{story.user.full_name}</p>
+              <p className="text-sm font-medium">{story.user?.full_name || 'User'}</p>
               <p className="text-xs text-white/70">{TimeAgo(story.createdAt)}</p>
             </div>
           </div>
@@ -75,12 +75,12 @@ const StoryViewer = ({ stories, index, setIndex, onClose }) => {
           <p className="text-white text-xl text-center px-8 whitespace-pre-line">{story.content}</p>
         )}
         {story.media_type === 'image' && (
-          <img src={story.media_url} alt="" className="w-full h-full object-contain" />
+          <img src={story.media_url || story.media_urls} alt="" className="w-full h-full object-contain" />
         )}
         {story.media_type === 'video' && (
           <video
             key={story._id}
-            src={story.media_url}
+            src={story.media_url || story.media_urls}
             autoPlay
             playsInline
             className="w-full h-full object-contain"

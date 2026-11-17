@@ -30,3 +30,4 @@ const Notification = ({t, message}) => {
         </div>
     )
 }
+export default Notification

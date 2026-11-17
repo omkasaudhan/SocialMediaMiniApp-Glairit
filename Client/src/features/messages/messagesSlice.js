@@ -35,7 +35,7 @@ const messagesSlice = createSlice({
     extraReducers: (builder)=>{
         builder.addCase(fetchMessages.fulfilled, (state, action)=>{
             if(action.payload){
-                state.messages = action.payload.messages
+                state.messages = action.payload.messages || action.payload.data || []
             }
         })
     }

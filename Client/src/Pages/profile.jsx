@@ -1,82 +1,121 @@
-import { useEffect, useMemo, useState } from 'react'
-import { BadgeCheck, Calendar, MapPin, MessageCircle,SquarePen } from 'lucide-react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
+import { BadgeCheck, Calendar, MapPin, MessageCircle, SquarePen, UserPlus, UserCheck } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { dummyConnectionsData, dummyPostsData, dummyUserData } from '../assets/assets'
 import EditProfile from '../Components/EditProfile'
 import TimeAgo from '../Components/feeds/TimeAgo'
 import PostCard from '../Components/feeds/PostCard'
-import { useSelector } from 'react-redux'
-import { getToken, useAuth } from '@clerk/react'
+import Loading from '../Components/loading'
+import { useDispatch, useSelector } from 'react-redux'
+import { useAuth } from '@clerk/react'
+import api from '../api/axios'
+import toast from 'react-hot-toast'
+import { fetchUser } from '../features/user/userSlice'
 
-
-/* ------------------------------------------------------------------ */
-/* Profile page                                                        */
-/* ------------------------------------------------------------------ */
+const TABS = ['posts', 'media', 'likes']
 
 const Profile = () => {
   const navigate = useNavigate()
-  const { getToken } = useAuth
-  const { profileId } = useParams() // /profile  or  /profile/:profileId
-  const currentUser = useSelector((state)=>state.user.value)
-  // const currentUser = dummyUserData
-  const TABS = ['posts', 'media', 'likes']
-  const baseUser = profileId
-    ? dummyConnectionsData.find((u) => u._id === profileId)
-    : currentUser
+  const dispatch = useDispatch()
+  const { getToken } = useAuth()
+  const { profileId, userId } = useParams() // supports /profile, /profile/:userId, and /profile/:profileId
+  const currentUser = useSelector((state) => state.user.value)
 
-  const [user, setUser] = useState(baseUser)
+  const [user, setUser] = useState(null)
+  const [posts, setPosts] = useState([])
+  const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('posts')
   const [showEdit, setShowEdit] = useState(false)
 
+  const targetId = userId || profileId || currentUser?._id
 
-  const fetchUser = async (profileId) => {
-    if(!profileId){
-      setUser(currentUser)
-      return
-    }
-    const token = await getToken()
-    try{
-      const { data } = await api.post(`/api/user/profiles`, {profileId}, {
-        headers: {Authorization: `Bearer ${token}`}  
-      })
-    if(data.success){
-      setUser(data.profile || baseUser)
-      setActiveTab('posts')
-    }
+  const fetchProfileData = useCallback(async (idToFetch) => {
+    if (!idToFetch) return
+    try {
+      setLoading(true)
+      const token = await getToken()
+      const { data } = await api.post(
+        '/api/user/profiles',
+        { profileId: idToFetch, userId: idToFetch },
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+      )
+
+      if (data && data.success) {
+        setUser(data.profile)
+        setPosts(data.posts || [])
+      } else {
+        toast.error(data?.message || 'Failed to load profile')
+      }
     } catch (error) {
-      toast.error(data.message)
-  }
-  }
-  // Re-sync when navigating between profiles
-  useEffect(() => {
-    if(profileId){
-        fetchUser(profileId)
-    } else {
-      fetchUser(currentUser._id)
+      console.error('fetchProfileData error:', error)
+      toast.error(error.message)
+    } finally {
+      setLoading(false)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileId, currentUser])
+  }, [getToken])
 
-  const isOwnProfile = user && user._id === currentUser._id
+  useEffect(() => {
+    if (targetId) {
+      setUser(null)
+      fetchProfileData(targetId)
+    }
+  }, [targetId, fetchProfileData])
 
-  // This user's posts, newest first (uses the edited user details after saving)
-  const posts = useMemo(() => {
+  const isOwnProfile = Boolean(
+    currentUser?._id && (targetId === currentUser._id || user?._id === currentUser._id)
+  )
+
+  const isFollowing = Boolean(
+    currentUser?.following && (
+      currentUser.following.includes(user?._id) ||
+      currentUser.following.some?.((f) => (typeof f === 'string' ? f === user?._id : f?._id === user?._id))
+    )
+  )
+
+  const handleFollowToggle = async () => {
+    if (!user?._id) return
+    try {
+      const endpoint = isFollowing ? '/api/user/unfollow' : '/api/user/follow'
+      const { data } = await api.post(
+        endpoint,
+        { id: user._id },
+        { headers: { Authorization: `Bearer ${await getToken()}` } }
+      )
+      if (data.success) {
+        toast.success(data.message)
+        dispatch(fetchUser(await getToken()))
+        fetchProfileData(user._id)
+      } else {
+        toast.error(data.message)
+      }
+    } catch (error) {
+      toast.error(error.message)
+    }
+  }
+
+  const sortedPosts = useMemo(() => {
+    return [...posts].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+  }, [posts])
+
+  const mediaItems = useMemo(() => {
+    return sortedPosts.flatMap((p) =>
+      (p.image_urls || []).map((url) => ({ url, postId: p._id }))
+    )
+  }, [sortedPosts])
+
+  const likedPosts = useMemo(() => {
     if (!user) return []
-    return dummyPostsData
-      .filter((p) => p.user._id === user._id)
-      .map((p) => ({ ...p, user }))
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-  }, [user])
+    return sortedPosts.filter(
+      (p) => Array.isArray(p.likes_count) && p.likes_count.includes(user._id)
+    )
+  }, [sortedPosts, user])
 
-  const likedPosts = useMemo(
-    () => dummyPostsData.filter((p) => user && p.likes_count.includes(user._id)),
-    [user]
-  )
-
-  const mediaItems = useMemo(
-    () => posts.flatMap((p) => p.image_urls.map((url) => ({ url, postId: p._id }))),
-    [posts]
-  )
+  if (loading && !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loading />
+      </div>
+    )
+  }
 
   if (!user) {
     return (
@@ -93,26 +132,30 @@ const Profile = () => {
         <div className="bg-white rounded-2xl shadow overflow-hidden">
           {/* Cover */}
           <div className="h-40 md:h-56 bg-gradient-to-r from-indigo-200 via-purple-200 to-pink-200">
-            {user.cover_photo && <img src={user.cover_photo} alt="Cover" className="w-full h-full object-cover" />}
+            {user.cover_photo && (
+              <img src={user.cover_photo} alt="Cover" className="w-full h-full object-cover" />
+            )}
           </div>
 
           {/* Info */}
           <div className="px-6 md:px-8 pb-6">
             <div className="flex flex-col md:flex-row items-start gap-4">
               <img
-                src={user.profile_picture}
-                alt={user.full_name}
-                className="size-32 rounded-full object-cover border-4 border-white shadow-lg -mt-16 shrink-0"
+                src={user.profile_picture || '/default-avatar.png'}
+                alt={user.full_name || 'User'}
+                className="size-32 rounded-full object-cover border-4 border-white shadow-lg -mt-16 shrink-0 bg-white"
               />
 
               <div className="w-full md:pt-4">
                 <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <h1 className="text-2xl font-bold text-slate-900">{user.full_name}</h1>
+                      <h1 className="text-2xl font-bold text-slate-900">{user.full_name || 'User'}</h1>
                       {user.is_verified && <BadgeCheck className="w-5 h-5 text-blue-500" />}
                     </div>
-                    <p className="text-gray-600 text-sm">{user.username ? `@${user.username}` : 'Add a username'}</p>
+                    <p className="text-gray-600 text-sm">
+                      {user.username ? `@${user.username}` : 'Add a username'}
+                    </p>
                   </div>
 
                   {isOwnProfile ? (
@@ -125,18 +168,36 @@ const Profile = () => {
                       Edit
                     </button>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/messages/${user._id}`)}
-                      className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 active:scale-95 transition px-4 py-2 rounded-lg text-sm font-medium text-white cursor-pointer"
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                      Message
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleFollowToggle}
+                        className={`flex items-center gap-2 border px-4 py-2 rounded-lg text-sm font-medium transition active:scale-95 cursor-pointer ${
+                          isFollowing
+                            ? 'border-gray-300 text-slate-700 hover:bg-gray-50'
+                            : 'border-indigo-600 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                        }`}
+                      >
+                        {isFollowing ? <UserCheck className="w-4 h-4 text-emerald-600" /> : <UserPlus className="w-4 h-4 text-indigo-600" />}
+                        {isFollowing ? 'Following' : 'Follow'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/messages/${user._id}`)}
+                        className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 active:scale-95 transition px-4 py-2 rounded-lg text-sm font-medium text-white cursor-pointer"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        Message
+                      </button>
+                    </div>
                   )}
                 </div>
 
-                {user.bio && <p className="text-sm text-slate-700 max-w-md mt-4 whitespace-pre-line">{user.bio}</p>}
+                {user.bio && (
+                  <p className="text-sm text-slate-700 max-w-md mt-4 whitespace-pre-line">
+                    {user.bio}
+                  </p>
+                )}
 
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-500 mt-4">
                   <span className="flex items-center gap-1.5">
@@ -151,15 +212,15 @@ const Profile = () => {
 
                 <div className="flex items-center gap-6 mt-6 pt-4 border-t border-gray-200">
                   <div>
-                    <span className="text-lg font-bold text-slate-900">{posts.length}</span>
+                    <span className="text-lg font-bold text-slate-900">{sortedPosts.length}</span>
                     <span className="text-xs text-gray-500 ml-1.5">Posts</span>
                   </div>
                   <div>
-                    <span className="text-lg font-bold text-slate-900">{user.followers.length}</span>
+                    <span className="text-lg font-bold text-slate-900">{user.followers?.length || 0}</span>
                     <span className="text-xs text-gray-500 ml-1.5">Followers</span>
                   </div>
                   <div>
-                    <span className="text-lg font-bold text-slate-900">{user.following.length}</span>
+                    <span className="text-lg font-bold text-slate-900">{user.following?.length || 0}</span>
                     <span className="text-xs text-gray-500 ml-1.5">Following</span>
                   </div>
                 </div>
@@ -191,10 +252,12 @@ const Profile = () => {
         {/* Tab content */}
         <div className="mt-6 flex flex-col items-center gap-6">
           {activeTab === 'posts' &&
-            (posts.length ? (
-              posts.map((post) => <PostCard key={post._id} post={post} />)
+            (sortedPosts.length ? (
+              sortedPosts.map((post) => <PostCard key={post._id} post={post} />)
             ) : (
-              <p className="text-slate-500 text-sm mt-6">No posts yet.</p>
+              <div className="text-center py-12 bg-white rounded-xl shadow-sm w-full">
+                <p className="text-slate-500 text-sm">No posts yet.</p>
+              </div>
             ))}
 
           {activeTab === 'media' &&
@@ -208,19 +271,27 @@ const Profile = () => {
                     rel="noreferrer"
                     className="relative group aspect-square rounded-lg overflow-hidden shadow bg-white"
                   >
-                    <img src={item.url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                    <img
+                      src={item.url}
+                      alt=""
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                    />
                   </a>
                 ))}
               </div>
             ) : (
-              <p className="text-slate-500 text-sm mt-6">No media yet.</p>
+              <div className="text-center py-12 bg-white rounded-xl shadow-sm w-full">
+                <p className="text-slate-500 text-sm">No media yet.</p>
+              </div>
             ))}
 
           {activeTab === 'likes' &&
             (likedPosts.length ? (
               likedPosts.map((post) => <PostCard key={post._id} post={post} />)
             ) : (
-              <p className="text-slate-500 text-sm mt-6">No liked posts yet.</p>
+              <div className="text-center py-12 bg-white rounded-xl shadow-sm w-full">
+                <p className="text-slate-500 text-sm">No liked posts yet.</p>
+              </div>
             ))}
         </div>
       </div>
@@ -230,7 +301,10 @@ const Profile = () => {
         <EditProfile
           user={user}
           onClose={() => setShowEdit(false)}
-          onSave={(updatedUser) => setUser(updatedUser)}
+          onSave={(updatedUser) => {
+            setUser((prev) => ({ ...prev, ...updatedUser }))
+            setShowEdit(false)
+          }}
         />
       )}
     </div>

@@ -1,56 +1,115 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { ImageIcon, SendHorizonal, X } from 'lucide-react'
-import { useParams } from 'react-router-dom'
-import { dummyConnectionsData, dummyMessagesData } from '../assets/assets'
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { ArrowLeft, ImageIcon, SendHorizonal, X } from 'lucide-react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useDispatch, useSelector } from 'react-redux'
 import { useAuth } from '@clerk/react'
 import toast from 'react-hot-toast'
 import api from '../api/axios'
 import { addMessage, fetchMessages, resetMessages } from '../features/messages/messagesSlice'
+import { fetchConnections } from '../features/connections/connectionsSlice'
 
- 
-const CURRENT_USER_ID = 'user_2zwZSCMRXQ9GaEEVLgm6akQo96i'
-
-const formatTime = (date) =>
-  new Date(date).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+const formatTime = (date) => {
+  if (!date) return ''
+  try {
+    return new Date(date).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  } catch {
+    return ''
+  }
+}
 
 const ChatBox = () => {
   const { userId } = useParams()
+  const navigate = useNavigate()
   const messagesEndRef = useRef(null)
   const { getToken } = useAuth()
   const dispatch = useDispatch()
-  const currentUser = useSelector((state)=>state.user.value)
-  const { messages } = useSelector((state)=>state.messages || {})
+
+  const currentUser = useSelector((state) => state.user.value)
+  const messagesState = useSelector((state) => state.messages || state.message || {})
+  const messages = Array.isArray(messagesState.messages) ? messagesState.messages : []
+
+  const connectionsState = useSelector((state) => state.connections || state.connection || {})
+  const connections = connectionsState.connections || []
+
+  const [partner, setPartner] = useState(null)
   const [text, setText] = useState('')
   const [image, setImage] = useState(null) // { file, preview }
-  // const [messages, setMessages] = useState(dummyMessagesData)
-  const connections = useSelector((state)=>state.connections.connections)
-  // The person you are chatting with
-  const user = connections.find((u) => u._id === userId) || dummyConnectionsData[0]
+  const [sending, setSending] = useState(false)
 
-  // Only messages between me and this user, oldest first
-  const conversation = useMemo(
-    () =>
-      messages
-        .filter(
-          (m) =>
-            (m.from_user_id === currentUser?._id && m.to_user_id === user._id) ||
-            (m.from_user_id === user._id && m.to_user_id === currentUser?._id)
+  // Resolve chat partner details
+  useEffect(() => {
+    const found = connections.find((u) => u._id === userId)
+    if (found) {
+      setPartner(found)
+    } else {
+      const loadPartner = async () => {
+        try {
+          const { data } = await api.post('/api/user/profiles', { profileId: userId })
+          if (data && data.success && data.profile) {
+            setPartner(data.profile)
+          }
+        } catch (err) {
+          console.error('Error loading chat partner:', err)
+        }
+      }
+      loadPartner()
+    }
+  }, [connections, userId])
+
+  // Fetch connections if not yet loaded
+  useEffect(() => {
+    const loadConnections = async () => {
+      try {
+        const token = await getToken()
+        if (token) dispatch(fetchConnections(token))
+      } catch (err) {
+        console.error(err)
+      }
+    }
+    if (connections.length === 0) {
+      loadConnections()
+    }
+  }, [getToken, dispatch, connections.length])
+
+  // Fetch messages between me and this user
+  const fetchUserMessages = useCallback(async () => {
+    try {
+      const token = await getToken()
+      if (token && userId) {
+        dispatch(fetchMessages({ token, userId }))
+      }
+    } catch (error) {
+      console.error('Error fetching messages:', error)
+    }
+  }, [getToken, userId, dispatch])
+
+  useEffect(() => {
+    fetchUserMessages()
+    return () => {
+      dispatch(resetMessages())
+    }
+  }, [fetchUserMessages, dispatch])
+
+  // Filter messages specifically belonging to this conversation
+  const conversation = useMemo(() => {
+    const currentId = currentUser?._id
+    return messages
+      .filter((m) => {
+        if (!m || typeof m !== 'object') return false
+        const fromId = typeof m.from_user_id === 'object' ? m.from_user_id?._id : m.from_user_id
+        const toId = typeof m.to_user_id === 'object' ? m.to_user_id?._id : m.to_user_id
+        return (
+          (fromId === currentId && toId === userId) ||
+          (fromId === userId && toId === currentId)
         )
-        .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)),
-    [messages, user._id]
-  )
+      })
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+  }, [messages, currentUser?._id, userId])
 
-  // Scroll to the newest message
+  // Auto-scroll to bottom on new message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  // Release the preview URL on unmount
-  // useEffect(() => {
-  //   return () => image && URL.revokeObjectURL(image.preview)
-  //   // eslint-disable-next-line react-hooks/exhaustive-deps
-  // }, [])
+  }, [conversation.length])
 
   const handleImageChange = (e) => {
     const file = e.target.files?.[0]
@@ -65,155 +124,187 @@ const ChatBox = () => {
     setImage(null)
   }
 
-  const fetchUserMessages = async () => {
-    try {
-      const token = await getToken()
-      dispatch(fetchMessages({token, userId}))
-    } catch (error) {
-      toast.error(error.message)
-    }
-  }
-
   const sendMessage = async () => {
-    try{   
-       if (!text.trim() && !image) return
+    if ((!text.trim() && !image) || sending) return
 
-       const token = await getToken()
-       const formData = new FormData() 
-       formData.append('to_user_id', userId)
-       formData.append('text', text)
-       image && formData.append('image', image.file)
+    try {
+      setSending(true)
+      const token = await getToken()
+      const formData = new FormData()
+      formData.append('to_user_id', userId)
+      if (text.trim()) formData.append('text', text.trim())
+      if (image) formData.append('image', image.file)
 
-       const { data } = await api.post('/api/message/send', formData, {
-        headers: { Authorization: `Bearer ${token}`}
-       })
-       if (data.success){
+      const { data } = await api.post('/api/message/send', formData, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+
+      if (data && data.success) {
         setText('')
         setImage(null)
-        dispatch(addMessage(data.message))
-       }else{
-        throw new Error(data.message)
-       }
-      }catch(error){
+        const newMsg = data.data || data.message
+        if (newMsg && typeof newMsg === 'object') {
+          dispatch(addMessage(newMsg))
+        } else {
+          // Re-fetch to ensure fresh state if object format varied
+          fetchUserMessages()
+        }
+      } else {
+        toast.error(data?.message || 'Failed to send message')
+      }
+    } catch (error) {
+      console.error('Error sending message:', error)
       toast.error(error.message)
+    } finally {
+      setSending(false)
     }
   }
 
-  useEffect(()=>{
-    fetchUserMessages()
-    return ()=>{
-      dispatch(resetMessages())
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendMessage()
     }
-  },[userId])
+  }
 
-  // useEffect(()=>{
-  //   if(connections.length > 0){
-  //     const foundUser = connections.find(connection => connection._id === userId)
-  //     setUser(foundUser || null)
-  //   }
-  // },[connections, userId])
-
-  // const handleKeyDown = (e) => {
-  //   if (e.key === 'Enter' && !e.shiftKey) {
-  //     e.preventDefault()
-  //     sendMessage()
-  //   }
-  // }
-
-  const canSend = text.trim() || image
+  const canSend = (Boolean(text.trim()) || Boolean(image)) && !sending
 
   return (
-    <div className="flex flex-col h-screen">
-      {/* Header */}
-      <div className="flex items-center gap-2 p-2 md:px-10 xl:pl-42 bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-gray-300">
-        <img src={user.profile_picture} alt={user.full_name} className="size-8 rounded-full object-cover" />
-        <div>
-          <p className="font-medium leading-tight">{user.full_name}</p>
-          <p className="text-sm text-gray-500 -mt-1.5">@{user.username}</p>
+    <div className="flex flex-col h-screen bg-slate-50">
+      {/* Header with Back Arrow */}
+      <div className="flex items-center gap-3 p-3 px-4 md:px-8 bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
+        <button
+          type="button"
+          onClick={() => navigate('/messages')}
+          aria-label="Back to messages"
+          title="Back to messages"
+          className="p-2 -ml-2 rounded-full hover:bg-slate-100 text-slate-700 active:scale-95 transition cursor-pointer"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+
+        <img
+          src={partner?.profile_picture || '/default-avatar.png'}
+          alt={partner?.full_name || 'User'}
+          className="size-10 rounded-full object-cover border border-gray-200 shrink-0"
+        />
+
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-slate-900 leading-tight truncate">
+            {partner?.full_name || 'Chat'}
+          </p>
+          <p className="text-xs text-gray-500 truncate">
+            @{partner?.username || userId}
+          </p>
         </div>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 p-5 md:px-10 overflow-y-scroll bg-slate-50">
-        <div className="space-y-4 max-w-4xl mx-auto">
-          {conversation.length === 0 && (
-            <p className="text-center text-sm text-slate-500 mt-10">
-              No messages yet. Say hello to {user.full_name}.
-            </p>
-          )}
+      {/* Messages Scroll Area */}
+      <div className="flex-1 p-4 md:px-8 overflow-y-auto bg-slate-50">
+        <div className="space-y-4 max-w-3xl mx-auto">
+          {conversation.length === 0 ? (
+            <div className="text-center py-16 text-slate-500 text-sm">
+              <p className="font-medium text-slate-700 mb-1">No messages yet</p>
+              <p>Say hello to {partner?.full_name || 'your connection'}!</p>
+            </div>
+          ) : (
+            conversation.map((message) => {
+              const fromId =
+                typeof message.from_user_id === 'object'
+                  ? message.from_user_id?._id
+                  : message.from_user_id
+              const sentByMe = fromId === currentUser?._id
+              const mediaSrc = Array.isArray(message.media_url)
+                ? message.media_url[0]
+                : message.media_url
 
-          {conversation.map((message) => {
-            const sentByMe = message.from_user_id === currentUser?._id
-            return (
-              <div
-                key={message._id}
-                className={`flex flex-col ${sentByMe ? 'items-end' : 'items-start'}`}
-              >
+              return (
                 <div
-                  className={`p-2 text-sm max-w-sm bg-white text-slate-700 rounded-lg shadow ${
-                    sentByMe ? 'rounded-br-none' : 'rounded-bl-none'
-                  }`}
+                  key={message._id}
+                  className={`flex flex-col ${sentByMe ? 'items-end' : 'items-start'}`}
                 >
-                  {message.message_type === 'image' && message.media_url && (
-                    <img
-                      src={message.media_url}
-                      alt="Shared"
-                      className="w-full max-w-sm rounded-lg mb-1"
-                    />
-                  )}
-                  {message.text && <p>{message.text}</p>}
+                  <div
+                    className={`p-3 text-sm max-w-sm sm:max-w-md rounded-2xl shadow-sm ${
+                      sentByMe
+                        ? 'bg-indigo-600 text-white rounded-br-none'
+                        : 'bg-white text-slate-800 rounded-bl-none border border-gray-200'
+                    }`}
+                  >
+                    {message.message_type === 'image' && mediaSrc && (
+                      <img
+                        src={mediaSrc}
+                        alt="Shared"
+                        className="w-full max-w-sm rounded-lg mb-2 object-cover"
+                      />
+                    )}
+                    {message.text && (
+                      <p className="whitespace-pre-line break-words leading-relaxed">
+                        {message.text}
+                      </p>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-slate-400 mt-1 px-1">
+                    {formatTime(message.createdAt)}
+                  </span>
                 </div>
-                <span className="text-[11px] text-slate-500 mt-1">
-                  {formatTime(message.createdAt)}
-                </span>
-              </div>
-            )
-          })}
+              )
+            })
+          )}
           <div ref={messagesEndRef} />
         </div>
       </div>
 
-      {/* Input */}
-      <div className="px-4 pb-5 bg-slate-50">
-        <div className="max-w-xl mx-auto">
+      {/* Input Area */}
+      <div className="p-3 md:px-8 bg-white border-t border-gray-200">
+        <div className="max-w-3xl mx-auto">
           {image && (
-            <div className="relative w-20 mb-2 ml-3">
-              <img src={image.preview} alt="To send" className="h-20 w-20 rounded-md object-cover shadow" />
+            <div className="relative w-20 mb-2 ml-2">
+              <img
+                src={image.preview}
+                alt="Upload preview"
+                className="h-20 w-20 rounded-md object-cover shadow border border-gray-200"
+              />
               <button
                 type="button"
                 onClick={removeImage}
                 aria-label="Remove image"
-                className="absolute -top-2 -right-2 bg-slate-700 text-white rounded-full p-0.5 cursor-pointer"
+                className="absolute -top-2 -right-2 bg-slate-700 text-white rounded-full p-0.5 hover:bg-slate-800 transition cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
           )}
 
-          <div className="flex items-center gap-3 pl-5 p-1.5 bg-white w-full border border-gray-200 shadow rounded-full">
+          <div className="flex items-center gap-2 pl-4 pr-1.5 py-1.5 bg-slate-50 w-full border border-gray-300 shadow-sm rounded-full focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
             <input
               type="text"
-              className="flex-1 outline-none text-slate-700 text-sm"
+              className="flex-1 outline-none text-slate-800 text-sm bg-transparent placeholder-slate-400"
               placeholder="Type a message..."
-              // onKeyDown={handleKeyDown}
+              onKeyDown={handleKeyDown}
               onChange={(e) => setText(e.target.value)}
               value={text}
             />
 
-            <label htmlFor="chat-image" className="cursor-pointer" title="Attach image">
-              <ImageIcon className="size-7 text-gray-400 hover:text-gray-600 transition" />
+            <label htmlFor="chat-image" className="cursor-pointer p-1" title="Attach image">
+              <ImageIcon className="size-6 text-gray-400 hover:text-indigo-600 transition" />
               <span className="sr-only">Attach image</span>
             </label>
-            <input type="file" id="chat-image" accept="image/*" hidden onChange={handleImageChange} />
+            <input
+              type="file"
+              id="chat-image"
+              accept="image/*"
+              hidden
+              onChange={handleImageChange}
+            />
 
             <button
               type="button"
               onClick={sendMessage}
               disabled={!canSend}
               aria-label="Send message"
-              className="bg-gradient-to-br from-indigo-500 to-purple-600 hover:from-indigo-700 hover:to-purple-800 active:scale-95 cursor-pointer text-white p-2 rounded-full transition disabled:opacity-60 disabled:cursor-not-allowed disabled:active:scale-100"
+              className="bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 active:scale-95 cursor-pointer text-white p-2 rounded-full transition disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
             >
-              <SendHorizonal size={18} />
+              <SendHorizonal size={16} />
             </button>
           </div>
         </div>
