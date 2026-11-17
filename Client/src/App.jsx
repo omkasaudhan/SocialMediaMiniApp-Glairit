@@ -46,16 +46,25 @@ function App() {
 
   useEffect(()=>{
     if(user){
-      const eventSource = new EventSource(import.meta.env.VITE_BASEURL + '/api/message/' + user.id);
+      const rawBase = import.meta.env.VITE_BASEURL || 'http://localhost:4000'
+      const baseUrl = rawBase.replace(/\/+$/, '')
+      const eventSource = new EventSource(`${baseUrl}/api/message/${user.id}`);
       eventSource.onmessage =(event)=>{
-        const message = JSON.parse(event.data)
-        if(pathnameRef.current === ('/messages/' + message.from_user_id._id)){
-          dispatch(addMessage(message))
-        }else{
-          toast.custom(
-            (t)=><Notification t={t} message={message} />
-          ,{position: "bottom-right"})
+        try {
+          const message = JSON.parse(event.data)
+          if(pathnameRef.current === ('/messages/' + message.from_user_id._id)){
+            dispatch(addMessage(message))
+          }else{
+            toast.custom(
+              (t)=><Notification t={t} message={message} />
+            ,{position: "bottom-right"})
+          }
+        } catch (e) {
+          console.error("Error parsing SSE message:", e)
         }
+      }
+      eventSource.onerror = () => {
+        // Silent error handler for SSE reconnection
       }
       return ()=>{
         eventSource.close()

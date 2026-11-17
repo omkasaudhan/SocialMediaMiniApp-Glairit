@@ -5,14 +5,17 @@ import imagekit from '../Config/imagekit.js'
 const connections = {}
 
 export const sseController = (req, res) => {
-    const userId = req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
+    const userId = req.params?.userId || req.userId || (typeof req.auth === 'function' ? req.auth()?.userId : req.auth?.userId)
     console.log('New client connected: ', userId)
 
     // Set headers for SSE
     res.setHeader('Content-Type', 'text/event-stream')
-    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Cache-Control', 'no-cache, no-transform')
     res.setHeader('Connection', 'keep-alive')
     res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('X-Accel-Buffering', 'no')
+    res.flushHeaders?.()
+    res.write(':\n\n')
 
     // Store the response object in the connections object
     connections[userId] = res
