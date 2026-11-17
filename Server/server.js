@@ -2,7 +2,7 @@ import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import { serve } from 'inngest/express'
-import connectDB from './Config/db.js'
+import connectDB, { lastDbError } from './Config/db.js'
 import { inngest, functions } from './inngest/index.js'
 import User from './models/User.js'
 import { clerkMiddleware, getAuth } from '@clerk/express'                                            
@@ -53,6 +53,41 @@ app.use((req, res, next) => {
 });
 
 app.get('/', (req, res) => res.send('Server is running'));
+
+// Health and diagnostic check
+app.get('/api/health', async (req, res) => {
+    if (User.db.readyState !== 1) {
+        try {
+            await connectDB();
+        } catch (e) {}
+    }
+    const stateMap = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+    return res.json({
+        success: true,
+        server: 'online',
+        database: {
+            status: stateMap[User.db.readyState] || 'unknown',
+            readyState: User.db.readyState,
+            hasMongodbUrl: Boolean(process.env.MONGODB_URL),
+            lastError: lastDbError
+        }
+    });
+});
+
+// Guard middleware to prevent Mongoose 10s query buffering when DB connection is down
+app.use('/api', (req, res, next) => {
+    if (req.path === '/health' || req.path === '/' || req.path.startsWith('/inngest')) {
+        return next();
+    }
+    if (User.db.readyState !== 1) {
+        return res.status(503).json({
+            success: false,
+            message: `Database connection unavailable: ${lastDbError || 'MongoDB is not connected. Please ensure 0.0.0.0/0 is whitelisted in MongoDB Atlas Network Access and MONGODB_URL is configured in Vercel settings.'}`
+        });
+    }
+    next();
+});
+
 app.use('/api/inngest', serve({ client: inngest, functions }));
 
 // Direct test endpoint to verify Clerk user sync into MongoDB Atlas immediately via Postman

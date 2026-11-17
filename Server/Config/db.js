@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 
 let isConnected = false;
+export let lastDbError = null;
 
 const connectDB = async () => {
     if (isConnected && mongoose.connection.readyState === 1) {
@@ -9,24 +10,38 @@ const connectDB = async () => {
 
     try {
         if (!process.env.MONGODB_URL) {
-            console.error('MONGODB_URL environment variable is missing in .env');
+            const msg = 'MONGODB_URL environment variable is missing in server environment variables';
+            console.error(msg);
+            lastDbError = msg;
             return;
         }
 
         const rawUrl = process.env.MONGODB_URL.trim();
-        const db_URL = rawUrl.endsWith('/') ? rawUrl.slice(0, -1) : rawUrl;
+        let connectionString = rawUrl;
 
-        const connectionString = db_URL.includes('glairit-Socially') 
-            ? db_URL 
-            : `${db_URL}/glairit-Socially`;
+        // Ensure database name glairit-Socially is properly specified before any query parameters
+        if (!connectionString.toLowerCase().includes('glairit-socially')) {
+            if (connectionString.includes('?')) {
+                const [base, query] = connectionString.split('?');
+                const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
+                connectionString = `${cleanBase}/glairit-Socially?${query}`;
+            } else {
+                const cleanBase = connectionString.endsWith('/') ? connectionString.slice(0, -1) : connectionString;
+                connectionString = `${cleanBase}/glairit-Socially`;
+            }
+        }
 
-        const db = await mongoose.connect(connectionString);
+        const db = await mongoose.connect(connectionString, {
+            dbName: 'glairit-Socially',
+            serverSelectionTimeoutMS: 5000,
+        });
+
         isConnected = db.connections[0].readyState === 1;
-        console.log('Database connected');
+        lastDbError = null;
+        console.log('Database connected successfully');
     } catch (error) {
+        lastDbError = error.message;
         console.error(`Mongoose connection error: ${error.message}`);
-        // Do NOT call process.exit(1) on serverless platforms (Vercel)
-        // because it crashes the container with 500 FUNCTION_INVOCATION_FAILED
     }
 }
 
