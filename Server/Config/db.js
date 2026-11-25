@@ -1,21 +1,27 @@
 import mongoose from 'mongoose'
 
-let isConnected = false;
+let cached = global.mongoose;
+if (!cached) {
+    cached = global.mongoose = { conn: null, promise: null };
+}
+
 export let lastDbError = null;
 
 const connectDB = async () => {
-    if (isConnected && mongoose.connection.readyState === 1) {
-        return;
+    // 1. If connection already open and ready, reuse it immediately
+    if (cached.conn && mongoose.connection.readyState === 1) {
+        return cached.conn;
     }
 
-    try {
-        if (!process.env.MONGODB_URL) {
-            const msg = 'MONGODB_URL environment variable is missing in server environment variables';
-            console.error(msg);
-            lastDbError = msg;
-            return;
-        }
+    if (!process.env.MONGODB_URL) {
+        const msg = 'MONGODB_URL environment variable is missing in server environment variables';
+        console.error(msg);
+        lastDbError = msg;
+        throw new Error(msg);
+    }
 
+    // 2. If a connection is already being established by another concurrent request, reuse the promise
+    if (!cached.promise) {
         const rawUrl = process.env.MONGODB_URL.trim();
         let connectionString = rawUrl;
 
@@ -31,18 +37,32 @@ const connectDB = async () => {
             }
         }
 
-        const db = await mongoose.connect(connectionString, {
+        const opts = {
             dbName: 'glairit-Socially',
-            serverSelectionTimeoutMS: 5000,
-        });
+            serverSelectionTimeoutMS: 15000, // 15s timeout to handle serverless cold starts gracefully
+            bufferCommands: false,
+        };
 
-        isConnected = db.connections[0].readyState === 1;
-        lastDbError = null;
-        console.log('Database connected successfully');
-    } catch (error) {
-        lastDbError = error.message;
-        console.error(`Mongoose connection error: ${error.message}`);
+        cached.promise = mongoose.connect(connectionString, opts).then((m) => {
+            console.log('Database connected successfully');
+            lastDbError = null;
+            return m;
+        }).catch((err) => {
+            console.error('Mongoose connection error:', err.message);
+            lastDbError = err.message;
+            cached.promise = null; // Reset promise so subsequent requests can retry
+            throw err;
+        });
     }
+
+    try {
+        cached.conn = await cached.promise;
+    } catch (e) {
+        cached.promise = null;
+        throw e;
+    }
+
+    return cached.conn;
 }
 
 export default connectDB

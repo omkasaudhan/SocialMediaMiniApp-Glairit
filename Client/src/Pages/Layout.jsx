@@ -1,7 +1,7 @@
 import { Menu, X } from 'lucide-react'
 import SideBar from '../Components/SideBar'
 import { Outlet } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useSelector, useDispatch } from 'react-redux'
 import { useAuth } from '@clerk/react'
 import { fetchUser } from '../features/user/userSlice'
@@ -11,6 +11,7 @@ const Layout = () => {
   const loading = useSelector((state) => state.user.loading)
   const error = useSelector((state) => state.user.error)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [autoRetryCount, setAutoRetryCount] = useState(0)
   const { getToken } = useAuth()
   const dispatch = useDispatch()
 
@@ -24,6 +25,17 @@ const Layout = () => {
       console.error("Retry failed:", err)
     }
   }
+
+  // Automatically retry up to 3 times on initial cold start errors before showing static error
+  useEffect(() => {
+    if (error && autoRetryCount < 3) {
+      const timer = setTimeout(() => {
+        setAutoRetryCount((prev) => prev + 1)
+        handleRetry()
+      }, 1500)
+      return () => clearTimeout(timer)
+    }
+  }, [error, autoRetryCount])
 
   if (user) {
     return (

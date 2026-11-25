@@ -17,14 +17,21 @@ const PORT = process.env.PORT || 4000;
 app.use(express.json());
 app.use(cors());
 
-// Connect to DB middleware (ensures DB is connected on request without crashing serverless cold starts)
+// Connect to DB middleware (ensures DB is connected on request, awaiting serverless cold starts)
 app.use(async (req, res, next) => {
+    if (req.path === '/' || req.path === '/api/health' || req.path.startsWith('/api/inngest')) {
+        return next();
+    }
     try {
         await connectDB();
+        next();
     } catch (err) {
         console.error('DB connection error in middleware:', err.message);
+        return res.status(503).json({
+            success: false,
+            message: `Database connection unavailable: ${err.message || 'Connecting to database...'}`
+        });
     }
-    next();
 });
 
 // Guard clerkMiddleware so missing keys return a descriptive message instead of 500 crash
@@ -72,20 +79,6 @@ app.get('/api/health', async (req, res) => {
             lastError: lastDbError
         }
     });
-});
-
-// Guard middleware to prevent Mongoose 10s query buffering when DB connection is down
-app.use('/api', (req, res, next) => {
-    if (req.path === '/health' || req.path === '/' || req.path.startsWith('/inngest')) {
-        return next();
-    }
-    if (User.db.readyState !== 1) {
-        return res.status(503).json({
-            success: false,
-            message: `Database connection unavailable: ${lastDbError || 'MongoDB is not connected. Please ensure 0.0.0.0/0 is whitelisted in MongoDB Atlas Network Access and MONGODB_URL is configured in Vercel settings.'}`
-        });
-    }
-    next();
 });
 
 app.use('/api/inngest', serve({ client: inngest, functions }));
